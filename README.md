@@ -1,2 +1,2 @@
-# pilot
-slack based social welfare agent for intermediaries (not end beneficiaries.)
+# triage
+AI agent that handles GitHub triage burden for OSS maintainers
