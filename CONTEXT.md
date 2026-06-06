@@ -84,7 +84,7 @@ If you find yourself writing a Slack API call inside src/core/triage/classify.ts
 - TypeScript (strict mode), Next.js 15 (App Router)
 - Vercel for hosting (serverless functions + Cron)
 - Supabase Postgres (with pgvector for embeddings)
-- Slack Bolt for JS
+- @slack/bolt with @vercel/slack-bolt (official Next.js App Router adapter on Vercel)
 - GitHub App (not Personal Access Token) for repo access
 - Gemini 2.5 Flash and Pro for LLM calls
 - MCP TypeScript SDK for the custom MCP server
