@@ -1,44 +1,228 @@
 import { postMessage } from "@/adapters/slack/post";
+import { upsertUserByGithubId } from "@/db/users";
+import { upsertInstallation } from "@/db/installations";
+import { upsertRepo } from "@/db/repos";
+import { upsertIssue } from "@/db/issues";
+import { insertWebhookEvent } from "@/db/webhook_events";
 
 const TEMP_DEFAULT_CHANNEL = "C0B5AG6F747";
 
 interface GitHubWebhookPayload {
   action?: string;
-  issue?: {
-    title?: string;
-    user?: {
-      login?: string;
+  installation?: {
+    id: number;
+    account: {
+      id: number;
+      login: string;
+      type: "User" | "Organization";
     };
   };
   repository?: {
-    full_name?: string;
+    id: number;
+    full_name: string;
+    name: string;
+    private: boolean;
+    default_branch: string;
+    description: string | null;
+    language: string | null;
+    stargazers_count: number;
+    open_issues_count: number;
+  };
+  issue?: {
+    id: number;
+    number: number;
+    node_id: string;
+    title: string;
+    body: string | null;
+    state: "open" | "closed";
+    user: { id: number; login: string };
+    author_association: string;
+    labels: Array<{ name: string; color: string }>;
+    assignees: Array<{ id: number; login: string }>;
+    comments: number;
+    reactions: {
+      total_count: number;
+      "+1": number;
+      "-1": number;
+      laugh: number;
+      hooray: number;
+      confused: number;
+      heart: number;
+      rocket: number;
+      eyes: number;
+    };
+    pull_request?: object;
+    created_at: string;
+    updated_at: string;
+    closed_at: string | null;
   };
 }
 
 export async function handleGitHubEvent(
   eventType: string,
   payload: GitHubWebhookPayload,
+  deliveryId: string,
 ): Promise<void> {
   console.log(`GitHub event received: ${eventType}`, {
     action: payload.action,
     repository: payload.repository?.full_name,
+    deliveryId,
   });
 
   switch (eventType) {
     case "issues": {
       if (payload.action === "opened") {
-        const title = payload.issue?.title || "Untitled";
-        const author = payload.issue?.user?.login || "unknown";
-        const repo = payload.repository?.full_name || "unknown";
+        let storageFailed = false;
 
-        const message = `New issue: ${title} by ${author} in ${repo}`;
-// LAYER-1-SHORTCUT: Posting to Slack directly here.
-// Layer 5 will replace this with: classifyIssue() → dispatchTriageResult().
-// See CONTEXT.md for the proper three-ring flow.
-        await postMessage({
-          channel: TEMP_DEFAULT_CHANNEL,
-          text: message,
-        });
+        try {
+          // STEP 1: Validate payload has required fields
+          if (!payload.installation?.id) {
+            throw new Error("Missing installation.id in webhook payload");
+          }
+          if (!payload.installation.account?.id) {
+            throw new Error("Missing installation.account.id in webhook payload");
+          }
+          if (!payload.installation.account?.login) {
+            throw new Error(
+              "Missing installation.account.login in webhook payload",
+            );
+          }
+          if (!payload.installation.account?.type) {
+            throw new Error(
+              "Missing installation.account.type in webhook payload",
+            );
+          }
+          if (!payload.repository?.id) {
+            throw new Error("Missing repository.id in webhook payload");
+          }
+          if (!payload.repository?.full_name) {
+            throw new Error("Missing repository.full_name in webhook payload");
+          }
+          if (!payload.issue?.id) {
+            throw new Error("Missing issue.id in webhook payload");
+          }
+          if (!payload.issue?.number) {
+            throw new Error("Missing issue.number in webhook payload");
+          }
+          if (!payload.issue?.node_id) {
+            throw new Error("Missing issue.node_id in webhook payload");
+          }
+          if (!payload.issue?.title) {
+            throw new Error("Missing issue.title in webhook payload");
+          }
+          if (!payload.issue?.state) {
+            throw new Error("Missing issue.state in webhook payload");
+          }
+          if (!payload.issue?.user?.id) {
+            throw new Error("Missing issue.user.id in webhook payload");
+          }
+          if (!payload.issue?.user?.login) {
+            throw new Error("Missing issue.user.login in webhook payload");
+          }
+          if (!payload.issue?.author_association) {
+            throw new Error(
+              "Missing issue.author_association in webhook payload",
+            );
+          }
+          if (!payload.issue?.created_at) {
+            throw new Error("Missing issue.created_at in webhook payload");
+          }
+          if (!payload.issue?.updated_at) {
+            throw new Error("Missing issue.updated_at in webhook payload");
+          }
+
+          // STEP 2: Upsert the user (installation owner)
+          const user = await upsertUserByGithubId({
+            github_id: payload.installation.account.id,
+            github_username: payload.installation.account.login,
+          });
+
+          // STEP 3: Upsert the installation
+          // TODO: Fetch github_target_type from GitHub API instead of defaulting to 'all'
+          const installation = await upsertInstallation({
+            user_id: user.id,
+            github_installation_id: payload.installation.id,
+            github_account_login: payload.installation.account.login,
+            github_account_id: payload.installation.account.id,
+            github_account_type: payload.installation.account.type,
+            github_target_type: "all",
+          });
+
+          // STEP 4: Upsert the repo
+          const repo = await upsertRepo({
+            installation_id: installation.id,
+            github_repo_id: payload.repository.id,
+            github_full_name: payload.repository.full_name,
+            github_default_branch:
+              payload.repository.default_branch || "main",
+            github_private: payload.repository.private ?? false,
+            star_count: payload.repository.stargazers_count ?? 0,
+            issue_count_open: payload.repository.open_issues_count ?? 0,
+            language_primary: payload.repository.language,
+            description: payload.repository.description,
+          });
+
+          // STEP 5: Upsert the issue
+          const issue = await upsertIssue({
+            repo_id: repo.id,
+            github_issue_id: payload.issue.id,
+            github_issue_number: payload.issue.number,
+            github_node_id: payload.issue.node_id,
+            title: payload.issue.title,
+            body: payload.issue.body,
+            state: payload.issue.state,
+            author_github_id: payload.issue.user.id,
+            author_github_login: payload.issue.user.login,
+            author_association: payload.issue.author_association,
+            labels: payload.issue.labels ?? [],
+            assignees: payload.issue.assignees ?? [],
+            comments_count: payload.issue.comments ?? 0,
+            reactions: payload.issue.reactions ?? {},
+            is_pull_request: payload.issue.pull_request !== undefined,
+            github_created_at: payload.issue.created_at,
+            github_updated_at: payload.issue.updated_at,
+            github_closed_at: payload.issue.closed_at,
+          });
+
+          // STEP 6: Insert webhook_event record (audit log)
+          await insertWebhookEvent({
+            installation_id: installation.id,
+            repo_id: repo.id,
+            issue_id: issue.id,
+            github_delivery_id: deliveryId,
+            event_type: eventType,
+            event_action: payload.action ?? null,
+            payload: payload as never,
+            signature_valid: true,
+            processing_status: "completed",
+            processed_at: new Date().toISOString(),
+          });
+
+          console.log(
+            `✓ Stored issue #${payload.issue.number} from ${payload.repository.full_name}`,
+          );
+        } catch (error) {
+          console.error("Failed to store webhook data:", error);
+          storageFailed = true;
+        }
+
+        // STEP 7: Post to Slack (always attempt, even if storage failed)
+        try {
+          const title = payload.issue?.title || "Untitled";
+          const author = payload.issue?.user?.login || "unknown";
+          const repo = payload.repository?.full_name || "unknown";
+
+          const message = storageFailed
+            ? `New issue received (storage failed): ${title} by ${author} in ${repo}`
+            : `New issue: ${title} by ${author} in ${repo}`;
+
+          await postMessage({
+            channel: TEMP_DEFAULT_CHANNEL,
+            text: message,
+          });
+        } catch (slackError) {
+          console.error("Failed to post to Slack:", slackError);
+        }
       }
       break;
     }

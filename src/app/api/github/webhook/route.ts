@@ -8,6 +8,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const rawBody = await request.text();
     const signature = request.headers.get("x-hub-signature-256");
     const eventType = request.headers.get("x-github-event");
+    const deliveryId = request.headers.get("x-github-delivery");
 
     if (!signature) {
       return NextResponse.json(
@@ -19,6 +20,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     if (!eventType) {
       return NextResponse.json(
         { error: "Missing x-github-event header" },
+        { status: 400 },
+      );
+    }
+
+    if (!deliveryId) {
+      return NextResponse.json(
+        { error: "Missing x-github-delivery header" },
         { status: 400 },
       );
     }
@@ -35,7 +43,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     const payload = JSON.parse(rawBody);
 
-    await handleGitHubEvent(eventType, payload);
+    await handleGitHubEvent(eventType, payload, deliveryId);
 
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {
