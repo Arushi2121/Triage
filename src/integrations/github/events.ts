@@ -11,11 +11,6 @@ interface GitHubWebhookPayload {
   action?: string;
   installation?: {
     id: number;
-    account: {
-      id: number;
-      login: string;
-      type: "User" | "Organization";
-    };
   };
   repository?: {
     id: number;
@@ -27,6 +22,11 @@ interface GitHubWebhookPayload {
     language: string | null;
     stargazers_count: number;
     open_issues_count: number;
+    owner: {
+      id: number;
+      login: string;
+      type: "User" | "Organization";
+    };
   };
   issue?: {
     id: number;
@@ -79,24 +79,20 @@ export async function handleGitHubEvent(
           if (!payload.installation?.id) {
             throw new Error("Missing installation.id in webhook payload");
           }
-          if (!payload.installation.account?.id) {
-            throw new Error("Missing installation.account.id in webhook payload");
-          }
-          if (!payload.installation.account?.login) {
-            throw new Error(
-              "Missing installation.account.login in webhook payload",
-            );
-          }
-          if (!payload.installation.account?.type) {
-            throw new Error(
-              "Missing installation.account.type in webhook payload",
-            );
-          }
           if (!payload.repository?.id) {
             throw new Error("Missing repository.id in webhook payload");
           }
           if (!payload.repository?.full_name) {
             throw new Error("Missing repository.full_name in webhook payload");
+          }
+          if (!payload.repository.owner?.id) {
+            throw new Error("Missing repository.owner.id in webhook payload");
+          }
+          if (!payload.repository.owner?.login) {
+            throw new Error("Missing repository.owner.login in webhook payload");
+          }
+          if (!payload.repository.owner?.type) {
+            throw new Error("Missing repository.owner.type in webhook payload");
           }
           if (!payload.issue?.id) {
             throw new Error("Missing issue.id in webhook payload");
@@ -131,10 +127,10 @@ export async function handleGitHubEvent(
             throw new Error("Missing issue.updated_at in webhook payload");
           }
 
-          // STEP 2: Upsert the user (installation owner)
+          // STEP 2: Upsert the user (repository owner)
           const user = await upsertUserByGithubId({
-            github_id: payload.installation.account.id,
-            github_username: payload.installation.account.login,
+            github_id: payload.repository.owner.id,
+            github_username: payload.repository.owner.login,
           });
 
           // STEP 3: Upsert the installation
@@ -142,9 +138,9 @@ export async function handleGitHubEvent(
           const installation = await upsertInstallation({
             user_id: user.id,
             github_installation_id: payload.installation.id,
-            github_account_login: payload.installation.account.login,
-            github_account_id: payload.installation.account.id,
-            github_account_type: payload.installation.account.type,
+            github_account_login: payload.repository.owner.login,
+            github_account_id: payload.repository.owner.id,
+            github_account_type: payload.repository.owner.type,
             github_target_type: "all",
           });
 
