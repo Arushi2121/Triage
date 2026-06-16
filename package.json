@@ -9,6 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@google/genai": "^2.8.0",
     "@octokit/auth-app": "^8.2.0",
     "@octokit/rest": "^22.0.1",
     "@slack/bolt": "^4.7.3",
@@ -16,7 +17,9 @@
     "@vercel/slack-bolt": "^1.4.3",
     "next": "^15.3.3",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "zod": "^3.25.76",
+    "zod-to-json-schema": "^3.25.2"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.1",
