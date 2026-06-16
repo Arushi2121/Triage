@@ -70,8 +70,15 @@ export async function classifyIssue(params: {
   let tokenCountInput = 0;
   let tokenCountOutput = 0;
 
+  type UsageMetadataShape = {
+    promptTokenCount?: number;
+    candidatesTokenCount?: number;
+    inputTokenCount?: number;
+    outputTokenCount?: number;
+  };
+
   if (response.usageMetadata) {
-    const metadata = response.usageMetadata as any;
+    const metadata = response.usageMetadata as UsageMetadataShape;
 
     // Try different possible property names
     if ("promptTokenCount" in metadata && "candidatesTokenCount" in metadata) {
