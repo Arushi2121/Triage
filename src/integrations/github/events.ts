@@ -245,6 +245,20 @@ export async function handleGitHubEvent(
               : `Issue closed: ${title} by ${author} in ${repo}`,
           true, // requireClosedAt
         );
+      } else if (payload.action === "reopened") {
+        await persistAndNotifyIssueEvent(
+          (title, author, repo, storageFailed) =>
+            storageFailed
+              ? `Issue reopened (storage failed): ${title} by ${author} in ${repo}`
+              : `Issue reopened: ${title} by ${author} in ${repo}`,
+        );
+      } else if (payload.action === "edited") {
+        await persistAndNotifyIssueEvent(
+          (title, author, repo, storageFailed) =>
+            storageFailed
+              ? `Issue edited (storage failed): ${title} by ${author} in ${repo}`
+              : `Issue edited: ${title} by ${author} in ${repo}`,
+        );
       }
       break;
     }
