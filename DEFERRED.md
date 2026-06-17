@@ -18,6 +18,7 @@ Last updated: 2026-06-16
 ### Pilot feedback-driven (Week of June 22-29)
 - [Layer 4] Prompt quality improvements based on misclassifications
 - [Layer 4] Gemini 503 retry logic if failure rate >5%
+- [Layer 6] Embedding token count from Gemini SDK (defaulting to 0)
 
 ### Feature-dependent
 - [Layer 3] Octokit github_target_type fetch — when adding repo-selection UI
@@ -71,6 +72,11 @@ Last updated: 2026-06-16
 **What:** For issues where classification failed, retry later via background worker.
 **Why deferred:** Requires infrastructure (Vercel Cron or queue). Lossy behavior acceptable for v1.
 **Revisit trigger:** Layer 7+ when multiple background tasks need similar infrastructure.
+
+### [Layer 6] Embedding token count from Gemini SDK
+**What:** Gemini SDK 2.8 doesn't expose embedding token counts at response.embeddings[0].statistics.tokenCount. Currently defaulting to 0 in src/integrations/llm/embed.ts.
+**Why deferred:** Token counts are for cost tracking. Embeddings are free in current Gemini usage tier. Non-blocking for v1.
+**Revisit trigger:** Pre-launch cost audit, or if Gemini SDK updates expose this field, or if usage tier moves to paid.
 
 ### [Layer 2] Per-user LLM credentials
 **What:** Currently single GEMINI_API_KEY env var. Future: each user provides their own.

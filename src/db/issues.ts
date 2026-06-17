@@ -39,6 +39,28 @@ export async function upsertIssue(data: IssueInsert): Promise<Issue> {
   return issue;
 }
 
+export async function updateIssueEmbedding(
+  issueId: string,
+  embedding: number[],
+  model: string,
+): Promise<void> {
+  const supabase = getSupabaseClient();
+
+  const { error } = await supabase
+    .from("issues")
+    .update({
+      embedding: embedding as unknown as string,
+      embedding_model: model,
+      embedded_at: new Date().toISOString(),
+    })
+    .eq("id", issueId)
+    .is("deleted_at", null);
+
+  if (error) {
+    throw new Error(`Failed to update issue embedding: ${error.message}`);
+  }
+}
+
 export async function getRecentIssuesForRepo(
   repoId: string,
   days: number,

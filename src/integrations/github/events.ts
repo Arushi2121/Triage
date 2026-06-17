@@ -2,12 +2,13 @@ import { postMessage } from "@/adapters/slack/post";
 import { upsertUserByGithubId } from "@/db/users";
 import { upsertInstallation } from "@/db/installations";
 import { upsertRepo } from "@/db/repos";
-import { upsertIssue } from "@/db/issues";
+import { upsertIssue, updateIssueEmbedding } from "@/db/issues";
 import { insertWebhookEvent } from "@/db/webhook_events";
 import { classifyIssue } from "@/integrations/llm/classify";
 import { upsertClassification } from "@/db/classifications";
 import { decideTriageActions } from "@/core/triage/decide";
 import { buildTriageMessage } from "@/formatters/slack/triage_message";
+import { embedIssueForStorage } from "@/integrations/llm/embed";
 
 const TEMP_DEFAULT_CHANNEL = "C0B5AG6F747";
 
@@ -81,6 +82,7 @@ export async function handleGitHubEvent(
   ): Promise<void> {
     let storageFailed = false;
     let classificationFailed = false;
+    let embeddingFailed = false;
     let issueId: string | null = null;
     let savedIssue: Awaited<ReturnType<typeof upsertIssue>> | null = null;
     let savedClassification: Awaited<ReturnType<typeof upsertClassification>> | null = null;
@@ -247,6 +249,25 @@ export async function handleGitHubEvent(
       } catch (error) {
         console.error("Classification failed:", error);
         classificationFailed = true;
+      }
+    }
+
+    // STEP 5.7: Generate and save embedding (only if storage succeeded and we have an issue)
+    if (!storageFailed && savedIssue && issueId !== null) {
+      try {
+        const embedResult = await embedIssueForStorage({
+          title: payload.issue!.title,
+          body: payload.issue!.body,
+        });
+
+        await updateIssueEmbedding(issueId, embedResult.embedding, embedResult.model);
+
+        console.log(
+          `✓ Embedded issue #${payload.issue!.number} (${embedResult.embedding.length} dims)`,
+        );
+      } catch (error) {
+        console.error("Embedding generation failed:", error);
+        embeddingFailed = true;
       }
     }
 
