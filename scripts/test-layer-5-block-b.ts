@@ -308,4 +308,91 @@ console.log("Testing Layer 5 Block B: Slack Triage Message Formatter\n");
   console.log("✓ Notify only formatter produces correct blocks");
 }
 
+// Test 7: flag-duplicate WITH duplicate metadata produces 5 blocks
+{
+  const issue = createFakeIssue();
+  const classification = createFakeClassification("duplicate", "medium", 0.85);
+  const recommendation: TriageRecommendation = {
+    type: "flag-duplicate",
+    priority: "low",
+    reasoning: "High semantic similarity to existing issue",
+    suggested_action: "Likely duplicate of #42. Review before responding.",
+    metadata: {
+      duplicate_of_issue_id: "fake-uuid-12345",
+      duplicate_of_github_number: 42,
+      duplicate_of_title: "Database connection drops after timeout",
+      similarity: 0.91,
+    },
+  };
+
+  const result = buildTriageMessage({
+    issue,
+    classification,
+    recommendation,
+    repoFullName: "Arushi2121/test-for-triage",
+    issueUrl: "https://github.com/Arushi2121/test-for-triage/issues/99",
+  });
+
+  assert.strictEqual(
+    result.blocks.length,
+    5,
+    "Expected 5 blocks when duplicate metadata present",
+  );
+
+  // Verify the duplicate block is at index 3 (after recommendation, before context)
+  const dupBlock = result.blocks[3] as { type: string; text: { text: string } };
+  assert.strictEqual(
+    dupBlock.type,
+    "section",
+    "Duplicate block should be a section",
+  );
+  assert.ok(
+    dupBlock.text.text.includes("#42"),
+    "Duplicate block should reference issue #42",
+  );
+  assert.ok(
+    dupBlock.text.text.includes("91%"),
+    "Duplicate block should show 91% similarity",
+  );
+  assert.ok(
+    dupBlock.text.text.includes(
+      "github.com/Arushi2121/test-for-triage/issues/42",
+    ),
+    "Duplicate block should link to the duplicate's GitHub URL",
+  );
+
+  console.log("✓ flag-duplicate with metadata produces 5 blocks with duplicate link");
+}
+
+// Test 8: flag-duplicate with incomplete metadata falls back to 4 blocks
+{
+  const issue = createFakeIssue();
+  const classification = createFakeClassification("duplicate", "low", 0.5);
+  const recommendation: TriageRecommendation = {
+    type: "flag-duplicate",
+    priority: "low",
+    reasoning: "Possible duplicate based on classification",
+    suggested_action: "Search recent issues for similar reports",
+    metadata: {
+      // Only has similarity but missing duplicate_of_github_number
+      similarity: 0.5,
+    },
+  };
+
+  const result = buildTriageMessage({
+    issue,
+    classification,
+    recommendation,
+    repoFullName: "Arushi2121/test-for-triage",
+    issueUrl: "https://github.com/Arushi2121/test-for-triage/issues/99",
+  });
+
+  assert.strictEqual(
+    result.blocks.length,
+    4,
+    "Expected 4 blocks when duplicate metadata incomplete",
+  );
+  console.log("✓ flag-duplicate with incomplete metadata falls back to 4 blocks");
+}
+
 console.log("\n✓ All Layer 5 Block B tests passed");
