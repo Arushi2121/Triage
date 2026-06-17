@@ -19,4 +19,5 @@ export interface TriageRecommendation {
 export interface TriageContext {
   issue: Issue;
   classification: Classification;
+  embedding?: number[]; // Optional: pre-computed embedding for duplicate detection
 }

@@ -19,6 +19,7 @@ Last updated: 2026-06-16
 - [Layer 4] Prompt quality improvements based on misclassifications
 - [Layer 4] Gemini 503 retry logic if failure rate >5%
 - [Layer 6] Embedding token count from Gemini SDK (defaulting to 0)
+- [Layer 6] Duplicate threshold tuning (currently 0.85, calibrate during pilot)
 
 ### Feature-dependent
 - [Layer 3] Octokit github_target_type fetch — when adding repo-selection UI
@@ -77,6 +78,11 @@ Last updated: 2026-06-16
 **What:** Gemini SDK 2.8 doesn't expose embedding token counts at response.embeddings[0].statistics.tokenCount. Currently defaulting to 0 in src/integrations/llm/embed.ts.
 **Why deferred:** Token counts are for cost tracking. Embeddings are free in current Gemini usage tier. Non-blocking for v1.
 **Revisit trigger:** Pre-launch cost audit, or if Gemini SDK updates expose this field, or if usage tier moves to paid.
+
+### [Layer 6] Duplicate threshold tuning
+**What:** DUPLICATE_SIMILARITY_THRESHOLD is set to 0.85 in src/core/triage/decide.ts based on Block A semantic similarity tests (similar issues scored ~0.79 in synthetic test).
+**Why deferred:** Real-world calibration requires actual repo data and maintainer feedback. May need to be lowered (catch more) or raised (fewer false positives).
+**Revisit trigger:** Pilot week. Track false positives and false negatives. Adjust threshold based on real maintainer feedback.
 
 ### [Layer 2] Per-user LLM credentials
 **What:** Currently single GEMINI_API_KEY env var. Future: each user provides their own.

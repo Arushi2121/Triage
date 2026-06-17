@@ -1,21 +1,71 @@
 import type { TriageContext, TriageRecommendation } from "@/types/triage";
 import { applyRules } from "./rules";
+import { findSimilarIssues } from "@/db/issues";
+
+// Threshold above which we consider an issue a duplicate.
+// Calibrated based on Layer 6 Block A semantic similarity tests (similar issues ~0.79).
+// 0.85 is conservative — only flags strong matches.
+// Tune during pilot; track in DEFERRED.md.
+const DUPLICATE_SIMILARITY_THRESHOLD = 0.85;
+const MAX_DUPLICATE_CANDIDATES = 3;
 
 /**
- * Single entry point for triage decisions.
+ * Decide what action Triage should recommend for an issue.
  *
- * Currently delegates to rule-based logic in rules.ts.
+ * Process:
+ * 1. Apply rule-based logic to get a baseline recommendation
+ * 2. If an embedding is provided, check for duplicate issues in the same repo
+ * 3. If a high-confidence duplicate is found, override to flag-duplicate
  *
- * Future layers will add:
- * - Duplicate detection via embeddings (Layer 6)
- * - Context-aware refinement from historical patterns
- * - LLM-based override for edge cases
- *
- * @param context - Issue and classification data
- * @returns Triage recommendation with type, priority, and suggested action
+ * Future layers will add: pattern-context refinement, LLM-based override.
  */
-export function decideTriageActions(
+export async function decideTriageActions(
   context: TriageContext,
-): TriageRecommendation {
-  return applyRules(context);
+): Promise<TriageRecommendation> {
+  const ruleBasedRecommendation = applyRules(context);
+
+  // If we don't have an embedding, return the rule-based recommendation as-is
+  if (!context.embedding) {
+    return ruleBasedRecommendation;
+  }
+
+  // Check for duplicates among issues in the same repo
+  try {
+    const similarIssues = await findSimilarIssues({
+      repoId: context.issue.repo_id,
+      embedding: context.embedding,
+      similarityThreshold: DUPLICATE_SIMILARITY_THRESHOLD,
+      limit: MAX_DUPLICATE_CANDIDATES,
+      excludeIssueId: context.issue.id,
+    });
+
+    if (similarIssues.length === 0) {
+      return ruleBasedRecommendation;
+    }
+
+    // Found at least one strong duplicate — override the recommendation
+    const topMatch = similarIssues[0];
+    return {
+      type: "flag-duplicate",
+      priority: "low",
+      reasoning: `High semantic similarity (${(topMatch.similarity * 100).toFixed(1)}%) to existing issue #${topMatch.github_issue_number}: "${topMatch.title}".`,
+      suggested_action: `Likely duplicate of #${topMatch.github_issue_number}. Review before responding.`,
+      metadata: {
+        duplicate_of_issue_id: topMatch.id,
+        duplicate_of_github_number: topMatch.github_issue_number,
+        duplicate_of_title: topMatch.title,
+        similarity: topMatch.similarity,
+        additional_candidates: similarIssues.slice(1).map((s) => ({
+          id: s.id,
+          github_issue_number: s.github_issue_number,
+          similarity: s.similarity,
+        })),
+      },
+    };
+  } catch (error) {
+    // Duplicate detection failure should not block the recommendation flow.
+    // Log and fall back to rule-based recommendation.
+    console.error("Duplicate detection failed in decideTriageActions:", error);
+    return ruleBasedRecommendation;
+  }
 }

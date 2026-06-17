@@ -86,6 +86,7 @@ export async function handleGitHubEvent(
     let issueId: string | null = null;
     let savedIssue: Awaited<ReturnType<typeof upsertIssue>> | null = null;
     let savedClassification: Awaited<ReturnType<typeof upsertClassification>> | null = null;
+    let savedEmbedding: number[] | null = null;
     let recommendation: import("@/types/triage").TriageRecommendation | null = null;
 
     try {
@@ -260,6 +261,7 @@ export async function handleGitHubEvent(
           body: payload.issue!.body,
         });
 
+        savedEmbedding = embedResult.embedding;
         await updateIssueEmbedding(issueId, embedResult.embedding, embedResult.model);
 
         console.log(
@@ -274,12 +276,18 @@ export async function handleGitHubEvent(
     // STEP 5.6: Decide triage actions (only if we have both issue and classification)
     if (savedIssue && savedClassification) {
       try {
-        recommendation = decideTriageActions({
+        recommendation = await decideTriageActions({
           issue: savedIssue,
           classification: savedClassification,
+          embedding: savedEmbedding ?? undefined,
         });
+        const dupNote =
+          recommendation.type === "flag-duplicate" &&
+          recommendation.metadata.duplicate_of_github_number
+            ? ` (duplicate of #${recommendation.metadata.duplicate_of_github_number})`
+            : "";
         console.log(
-          `✓ Triage recommendation for issue #${payload.issue!.number}: ${recommendation.type} (priority: ${recommendation.priority})`,
+          `✓ Triage recommendation for issue #${payload.issue!.number}: ${recommendation.type} (priority: ${recommendation.priority})${dupNote}`,
         );
       } catch (error) {
         console.error("Triage decision failed:", error);

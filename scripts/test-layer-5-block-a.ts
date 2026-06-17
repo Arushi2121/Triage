@@ -59,17 +59,18 @@ function createFakeClassification(
   };
 }
 
-console.log("Testing Layer 5 Block A: Core Triage Decision Engine\n");
+async function main() {
+  console.log("Testing Layer 5 Block A: Core Triage Decision Engine\n");
 
-// Test 1: Spam classification
-{
-  const issue = createFakeIssue();
-  const classification = createFakeClassification(
-    "spam",
-    "none",
-    "Promotional content detected",
-  );
-  const result = decideTriageActions({ issue, classification });
+  // Test 1: Spam classification
+  {
+    const issue = createFakeIssue();
+    const classification = createFakeClassification(
+      "spam",
+      "none",
+      "Promotional content detected",
+    );
+    const result = await decideTriageActions({ issue, classification });
 
   assert.strictEqual(result.type, "flag-spam", "Spam should flag as spam");
   assert.strictEqual(result.priority, "low", "Spam should be low priority");
@@ -96,7 +97,7 @@ console.log("Testing Layer 5 Block A: Core Triage Decision Engine\n");
     "medium",
     "Similar to previously reported issue",
   );
-  const result = decideTriageActions({ issue, classification });
+  const result = await decideTriageActions({ issue, classification });
 
   assert.strictEqual(
     result.type,
@@ -130,7 +131,7 @@ console.log("Testing Layer 5 Block A: Core Triage Decision Engine\n");
     "critical",
     "Database crashes on startup",
   );
-  const result = decideTriageActions({ issue, classification });
+  const result = await decideTriageActions({ issue, classification });
 
   assert.strictEqual(
     result.type,
@@ -161,7 +162,7 @@ console.log("Testing Layer 5 Block A: Core Triage Decision Engine\n");
     "high",
     "Authentication failing for OAuth users",
   );
-  const result = decideTriageActions({ issue, classification });
+  const result = await decideTriageActions({ issue, classification });
 
   assert.strictEqual(
     result.type,
@@ -192,7 +193,7 @@ console.log("Testing Layer 5 Block A: Core Triage Decision Engine\n");
     "medium",
     "Installation guide missing Redis setup",
   );
-  const result = decideTriageActions({ issue, classification });
+  const result = await decideTriageActions({ issue, classification });
 
   assert.strictEqual(
     result.type,
@@ -223,7 +224,7 @@ console.log("Testing Layer 5 Block A: Core Triage Decision Engine\n");
     "none",
     "User asking how to configure SSL",
   );
-  const result = decideTriageActions({ issue, classification });
+  const result = await decideTriageActions({ issue, classification });
 
   assert.strictEqual(
     result.type,
@@ -250,7 +251,7 @@ console.log("Testing Layer 5 Block A: Core Triage Decision Engine\n");
     "medium",
     "Request for dark mode support",
   );
-  const result = decideTriageActions({ issue, classification });
+  const result = await decideTriageActions({ issue, classification });
 
   assert.strictEqual(
     result.type,
@@ -281,7 +282,7 @@ console.log("Testing Layer 5 Block A: Core Triage Decision Engine\n");
     "low",
     "Minor UI polish request",
   );
-  const result = decideTriageActions({ issue, classification });
+  const result = await decideTriageActions({ issue, classification });
 
   assert.strictEqual(
     result.type,
@@ -312,7 +313,7 @@ console.log("Testing Layer 5 Block A: Core Triage Decision Engine\n");
     "critical",
     "Crypto scam detected",
   );
-  const result = decideTriageActions({ issue, classification });
+  const result = await decideTriageActions({ issue, classification });
 
   assert.strictEqual(
     result.type,
@@ -335,7 +336,7 @@ console.log("Testing Layer 5 Block A: Core Triage Decision Engine\n");
     "high",
     "Similar to high-priority issue reported last week",
   );
-  const result = decideTriageActions({ issue, classification });
+  const result = await decideTriageActions({ issue, classification });
 
   assert.strictEqual(
     result.type,
@@ -358,7 +359,7 @@ console.log("Testing Layer 5 Block A: Core Triage Decision Engine\n");
     "critical",
     "Missing security warning in docs",
   );
-  const result = decideTriageActions({ issue, classification });
+  const result = await decideTriageActions({ issue, classification });
 
   assert.strictEqual(
     result.type,
@@ -381,7 +382,7 @@ console.log("Testing Layer 5 Block A: Core Triage Decision Engine\n");
     "none",
     "Misclassified or edge case bug",
   );
-  const result = decideTriageActions({ issue, classification });
+  const result = await decideTriageActions({ issue, classification });
 
   assert.strictEqual(
     result.type,
@@ -394,6 +395,12 @@ console.log("Testing Layer 5 Block A: Core Triage Decision Engine\n");
     "Severity 'none' should map to low priority",
   );
   console.log("✓ Bug with 'none' severity → notify-only/low (falls to default)");
+  }
+
+  console.log("\n✓ All Layer 5 Block A tests passed");
 }
 
-console.log("\n✓ All Layer 5 Block A tests passed");
+main().catch((error) => {
+  console.error("Test failed:", error);
+  process.exit(1);
+});
