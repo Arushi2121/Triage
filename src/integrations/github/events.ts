@@ -6,6 +6,8 @@ import { upsertIssue } from "@/db/issues";
 import { insertWebhookEvent } from "@/db/webhook_events";
 import { classifyIssue } from "@/integrations/llm/classify";
 import { upsertClassification } from "@/db/classifications";
+import { decideTriageActions } from "@/core/triage/decide";
+import { buildTriageMessage } from "@/formatters/slack/triage_message";
 
 const TEMP_DEFAULT_CHANNEL = "C0B5AG6F747";
 
@@ -73,18 +75,16 @@ export async function handleGitHubEvent(
 
   // Helper function to persist issue events and notify Slack
   async function persistAndNotifyIssueEvent(
-    slackMessageBuilder: (
-      title: string,
-      author: string,
-      repo: string,
-      flags: { storageFailed: boolean; classificationFailed: boolean },
-    ) => string,
+    eventDescriptor: "New issue" | "Issue closed" | "Issue reopened" | "Issue edited",
     requireClosedAt: boolean = false,
     shouldClassify: boolean = false,
   ): Promise<void> {
     let storageFailed = false;
     let classificationFailed = false;
     let issueId: string | null = null;
+    let savedIssue: Awaited<ReturnType<typeof upsertIssue>> | null = null;
+    let savedClassification: Awaited<ReturnType<typeof upsertClassification>> | null = null;
+    let recommendation: import("@/types/triage").TriageRecommendation | null = null;
 
     try {
       // STEP 1: Validate payload has required fields
@@ -173,7 +173,7 @@ export async function handleGitHubEvent(
       });
 
       // STEP 5: Upsert the issue
-      const issue = await upsertIssue({
+      savedIssue = await upsertIssue({
         repo_id: repo.id,
         github_issue_id: payload.issue.id,
         github_issue_number: payload.issue.number,
@@ -193,13 +193,13 @@ export async function handleGitHubEvent(
         github_updated_at: payload.issue.updated_at,
         github_closed_at: payload.issue.closed_at,
       });
-      issueId = issue.id;
+      issueId = savedIssue.id;
 
       // STEP 6: Insert webhook_event record (audit log)
       await insertWebhookEvent({
         installation_id: installation.id,
         repo_id: repo.id,
-        issue_id: issue.id,
+        issue_id: savedIssue.id,
         github_delivery_id: deliveryId,
         event_type: eventType,
         event_action: payload.action ?? null,
@@ -226,7 +226,7 @@ export async function handleGitHubEvent(
           repoFullName: payload.repository!.full_name,
         });
 
-        await upsertClassification({
+        savedClassification = await upsertClassification({
           issue_id: issueId,
           issue_type: result.classification.issue_type,
           severity: result.classification.severity,
@@ -250,21 +250,55 @@ export async function handleGitHubEvent(
       }
     }
 
+    // STEP 5.6: Decide triage actions (only if we have both issue and classification)
+    if (savedIssue && savedClassification) {
+      try {
+        recommendation = decideTriageActions({
+          issue: savedIssue,
+          classification: savedClassification,
+        });
+        console.log(
+          `✓ Triage recommendation for issue #${payload.issue!.number}: ${recommendation.type} (priority: ${recommendation.priority})`,
+        );
+      } catch (error) {
+        console.error("Triage decision failed:", error);
+      }
+    }
+
     // STEP 7: Post to Slack (always attempt, even if storage failed)
     try {
       const title = payload.issue?.title || "Untitled";
       const author = payload.issue?.user?.login || "unknown";
       const repo = payload.repository?.full_name || "unknown";
 
-      const message = slackMessageBuilder(title, author, repo, {
-        storageFailed,
-        classificationFailed,
-      });
-
-      await postMessage({
-        channel: TEMP_DEFAULT_CHANNEL,
-        text: message,
-      });
+      // Path A: rich message when we have a recommendation
+      if (recommendation && savedIssue && savedClassification) {
+        const issueUrl = `https://github.com/${repo}/issues/${payload.issue!.number}`;
+        const { text, blocks } = buildTriageMessage({
+          issue: savedIssue,
+          classification: savedClassification,
+          recommendation,
+          repoFullName: repo,
+          issueUrl,
+        });
+        await postMessage({
+          channel: TEMP_DEFAULT_CHANNEL,
+          text,
+          blocks,
+        });
+      } else {
+        // Path B: plain text fallback for non-opened events OR when classification/recommendation failed
+        const flagSuffix = storageFailed
+          ? " (storage failed)"
+          : classificationFailed
+            ? " (classification skipped)"
+            : "";
+        const message = `${eventDescriptor}${flagSuffix}: ${title} by ${author} in ${repo}`;
+        await postMessage({
+          channel: TEMP_DEFAULT_CHANNEL,
+          text: message,
+        });
+      }
     } catch (slackError) {
       console.error("Failed to post to Slack:", slackError);
     }
@@ -273,38 +307,13 @@ export async function handleGitHubEvent(
   switch (eventType) {
     case "issues": {
       if (payload.action === "opened") {
-        await persistAndNotifyIssueEvent(
-          (title, author, repo, flags) =>
-            flags.storageFailed
-              ? `New issue received (storage failed): ${title} by ${author} in ${repo}`
-              : flags.classificationFailed
-                ? `New issue: ${title} by ${author} in ${repo} (classification skipped)`
-                : `New issue: ${title} by ${author} in ${repo}`,
-          false,
-          true,
-        );
+        await persistAndNotifyIssueEvent("New issue", false, true);
       } else if (payload.action === "closed") {
-        await persistAndNotifyIssueEvent(
-          (title, author, repo, flags) =>
-            flags.storageFailed
-              ? `Issue closed (storage failed): ${title} by ${author} in ${repo}`
-              : `Issue closed: ${title} by ${author} in ${repo}`,
-          true,
-        );
+        await persistAndNotifyIssueEvent("Issue closed", true);
       } else if (payload.action === "reopened") {
-        await persistAndNotifyIssueEvent(
-          (title, author, repo, flags) =>
-            flags.storageFailed
-              ? `Issue reopened (storage failed): ${title} by ${author} in ${repo}`
-              : `Issue reopened: ${title} by ${author} in ${repo}`,
-        );
+        await persistAndNotifyIssueEvent("Issue reopened");
       } else if (payload.action === "edited") {
-        await persistAndNotifyIssueEvent(
-          (title, author, repo, flags) =>
-            flags.storageFailed
-              ? `Issue edited (storage failed): ${title} by ${author} in ${repo}`
-              : `Issue edited: ${title} by ${author} in ${repo}`,
-        );
+        await persistAndNotifyIssueEvent("Issue edited");
       }
       break;
     }
