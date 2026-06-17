@@ -61,6 +61,40 @@ export async function updateIssueEmbedding(
   }
 }
 
+export interface SimilarIssue {
+  id: string;
+  github_issue_id: number;
+  github_issue_number: number;
+  title: string;
+  state: string;
+  similarity: number;
+  github_created_at: string;
+}
+
+export async function findSimilarIssues(params: {
+  repoId: string;
+  embedding: number[];
+  similarityThreshold: number;
+  limit: number;
+  excludeIssueId?: string;
+}): Promise<SimilarIssue[]> {
+  const supabase = getSupabaseClient();
+
+  const { data, error } = await supabase.rpc("find_similar_issues", {
+    query_embedding: params.embedding as unknown as string,
+    target_repo_id: params.repoId,
+    similarity_threshold: params.similarityThreshold,
+    match_limit: params.limit,
+    exclude_issue_id: params.excludeIssueId ?? null,
+  });
+
+  if (error) {
+    throw new Error(`Failed to find similar issues: ${error.message}`);
+  }
+
+  return (data ?? []) as SimilarIssue[];
+}
+
 export async function getRecentIssuesForRepo(
   repoId: string,
   days: number,
