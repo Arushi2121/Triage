@@ -9,6 +9,8 @@ import { upsertClassification } from "@/db/classifications";
 import { decideTriageActions } from "@/core/triage/decide";
 import { buildTriageMessage } from "@/formatters/slack/triage_message";
 import { embedIssueForStorage } from "@/integrations/llm/embed";
+import { draftResponse } from "@/integrations/llm/draft";
+import { insertDraft } from "@/db/drafts";
 
 const TEMP_DEFAULT_CHANNEL = "C0B5AG6F747";
 
@@ -83,6 +85,8 @@ export async function handleGitHubEvent(
     let storageFailed = false;
     let classificationFailed = false;
     let embeddingFailed = false;
+    let draftFailed = false;
+    let savedDraft: Awaited<ReturnType<typeof insertDraft>> | null = null;
     let issueId: string | null = null;
     let savedIssue: Awaited<ReturnType<typeof upsertIssue>> | null = null;
     let savedClassification: Awaited<ReturnType<typeof upsertClassification>> | null = null;
@@ -291,6 +295,69 @@ export async function handleGitHubEvent(
         );
       } catch (error) {
         console.error("Triage decision failed:", error);
+      }
+    }
+
+    // STEP 5.8: Generate draft response (only if we have a recommendation AND it's draft-eligible)
+    if (
+      savedIssue &&
+      savedClassification &&
+      recommendation &&
+      recommendation.type !== "urgent-attention"
+    ) {
+      try {
+        // Build duplicate context for flag-duplicate type
+        let duplicateContext: { number: number; title: string } | undefined = undefined;
+        if (recommendation.type === "flag-duplicate") {
+          const dupNumber = recommendation.metadata.duplicate_of_github_number;
+          const dupTitle = recommendation.metadata.duplicate_of_title;
+          if (typeof dupNumber === "number" && typeof dupTitle === "string") {
+            duplicateContext = { number: dupNumber, title: dupTitle };
+          }
+        }
+
+        const draftResult = await draftResponse({
+          issueTitle: payload.issue!.title,
+          issueBody: payload.issue!.body,
+          repoFullName: payload.repository!.full_name,
+          issueAuthor: payload.issue!.user.login,
+          classificationType: savedClassification.issue_type,
+          classificationSeverity: savedClassification.severity,
+          classificationReasoning: savedClassification.reasoning,
+          recommendationType: recommendation.type,
+          duplicateContext,
+        });
+
+        // Map recommendation type to draft_type per schema CHECK constraint
+        // Schema allows: 'comment', 'label-application', 'close-as-duplicate', 'close-as-spam', 'request-info'
+        const draftTypeMap: Record<string, string> = {
+          "request-info": "request-info",
+          "route-to-docs": "comment",
+          "flag-spam": "close-as-spam",
+          "flag-duplicate": "close-as-duplicate",
+          "notify-only": "comment",
+        };
+        const draftType = draftTypeMap[recommendation.type] ?? "comment";
+
+        savedDraft = await insertDraft({
+          issue_id: savedIssue.id,
+          classification_id: savedClassification.id,
+          draft_type: draftType,
+          content: draftResult.draft.draft_content,
+          raw_llm_response: draftResult.rawResponse as never,
+          prompt_version: draftResult.promptVersion,
+          llm_model: draftResult.model,
+          llm_temperature: draftResult.temperature,
+          token_count_input: draftResult.tokenCountInput,
+          token_count_output: draftResult.tokenCountOutput,
+        });
+
+        console.log(
+          `✓ Drafted response for issue #${payload.issue!.number} (type: ${draftType}, confidence: ${draftResult.draft.confidence})`,
+        );
+      } catch (error) {
+        console.error("Draft generation failed:", error);
+        draftFailed = true;
       }
     }
 
