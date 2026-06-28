@@ -2,7 +2,7 @@
 
 Items intentionally postponed during development. NOT bugs. NOT missing functionality. Conscious tradeoffs with clear revisit triggers.
 
-Last updated: 2026-06-16
+Last updated: 2026-06-28
 
 ---
 
@@ -32,6 +32,21 @@ Last updated: 2026-06-16
 - [Layer 2] webhook_events partitioning
 - [Layer 2] Materialized views for analytics queries
 - [Layer 2] Retention policy for old webhook_events
+
+---
+
+## Completed Layers
+
+### Layer 6 — Duplicate Detection (shipped 2026-06-18, polished 2026-06-28)
+- Block A: Embedding generation (Gemini gemini-embedding-001, 1536 dims, semantic similarity verified at 79%/55% gap)
+- Block B: DB integration (updateIssueEmbedding wired into webhook flow; embedded_at populated on every new issue)
+- Block C: Similarity search via pgvector RPC function (find_similar_issues)
+- Block D: Duplicate detection in core decision engine (threshold 0.85, override to flag-duplicate)
+- Block E: Rich Slack display with clickable duplicate links + similarity %
+- Block F: Backfill script + duplicate analysis report (idempotent, batched, demo-worthy artifact)
+  - Initial bug: used RETRIEVAL_QUERY task type for document-to-document comparison
+  - Fix: switched to RETRIEVAL_DOCUMENT on both sides
+  - Threshold raised from 0.80 to 0.85 to eliminate category-clustering false positives
 
 ---
 
