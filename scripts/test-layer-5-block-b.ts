@@ -395,4 +395,138 @@ console.log("Testing Layer 5 Block B: Slack Triage Message Formatter\n");
   console.log("✓ flag-duplicate with incomplete metadata falls back to 4 blocks");
 }
 
+// Test 9: Message includes draft and buttons when draft is provided
+{
+  const fakeIssue = createFakeIssue();
+  const fakeClassification = createFakeClassification("question", "none", 0.82);
+  const recommendation: TriageRecommendation = {
+    type: "request-info",
+    priority: "low",
+    reasoning: "Question requires clarification",
+    suggested_action: "Ask author for specific details",
+    metadata: {},
+  };
+
+  const fakeDraft = {
+    id: "draft-uuid-99",
+    issue_id: fakeIssue.id,
+    classification_id: fakeClassification.id,
+    version: 1,
+    status: "pending",
+    draft_type: "request-info",
+    content: "Can you share the full error output and your Node version?",
+    edited_content: null,
+    reviewed_by_user_id: null,
+    reviewed_at: null,
+    rejection_reason: null,
+    raw_llm_response: {},
+    prompt_version: "v1",
+    llm_model: "gemini-2.5-flash",
+    llm_temperature: 0.4,
+    token_count_input: 250,
+    token_count_output: 50,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+
+  const result = buildTriageMessage({
+    issue: fakeIssue,
+    classification: fakeClassification,
+    recommendation,
+    repoFullName: "Arushi2121/test-for-triage",
+    issueUrl: "https://github.com/Arushi2121/test-for-triage/issues/99",
+    draft: fakeDraft as never, // cast to bypass strict Draft typing for test fixture
+  });
+
+  // 4 base blocks + 2 draft blocks (section + actions) = 6 blocks
+  assert.strictEqual(result.blocks.length, 6, "Expected 6 blocks when draft is provided");
+
+  // Verify the draft section block contains the draft content
+  const draftBlock = result.blocks[3] as { type: string; text: { text: string } };
+  assert.strictEqual(draftBlock.type, "section");
+  assert.ok(draftBlock.text.text.includes("Can you share"), "Draft block should contain draft content");
+  assert.ok(draftBlock.text.text.includes("📝 Proposed response"), "Draft block should have proposed response label");
+
+  // Verify the actions block has 2 buttons
+  const actionsBlock = result.blocks[4] as { type: string; elements: Array<{ action_id: string; text: { text: string } }> };
+  assert.strictEqual(actionsBlock.type, "actions");
+  assert.strictEqual(actionsBlock.elements.length, 2);
+  assert.ok(actionsBlock.elements[0].action_id.startsWith("draft_approve_"), "First button should be approve");
+  assert.ok(actionsBlock.elements[1].action_id.startsWith("draft_skip_"), "Second button should be skip");
+
+  console.log("✓ Message with draft produces 6 blocks including draft + actions");
+}
+
+// Test 10: Message with null draft does NOT include draft blocks
+{
+  const fakeIssue = createFakeIssue();
+  const fakeClassification = createFakeClassification("question", "none", 0.82);
+  const recommendation: TriageRecommendation = {
+    type: "request-info",
+    priority: "low",
+    reasoning: "Test",
+    suggested_action: "Test",
+    metadata: {},
+  };
+
+  const result = buildTriageMessage({
+    issue: fakeIssue,
+    classification: fakeClassification,
+    recommendation,
+    repoFullName: "Arushi2121/test-for-triage",
+    issueUrl: "https://github.com/Arushi2121/test-for-triage/issues/99",
+    draft: null,
+  });
+
+  assert.strictEqual(result.blocks.length, 4, "Expected 4 blocks when draft is null");
+  console.log("✓ Message with null draft produces 4 blocks (no draft section)");
+}
+
+// Test 11: Message with draft.status !== "pending" does NOT include draft blocks
+{
+  const fakeIssue = createFakeIssue();
+  const fakeClassification = createFakeClassification("question", "none", 0.82);
+  const recommendation: TriageRecommendation = {
+    type: "request-info",
+    priority: "low",
+    reasoning: "Test",
+    suggested_action: "Test",
+    metadata: {},
+  };
+
+  const approvedDraft = {
+    id: "draft-uuid-100",
+    issue_id: fakeIssue.id,
+    classification_id: fakeClassification.id,
+    version: 1,
+    status: "approved", // not pending
+    draft_type: "comment",
+    content: "Already approved",
+    edited_content: null,
+    reviewed_by_user_id: null,
+    reviewed_at: null,
+    rejection_reason: null,
+    raw_llm_response: {},
+    prompt_version: "v1",
+    llm_model: "gemini-2.5-flash",
+    llm_temperature: 0.4,
+    token_count_input: 100,
+    token_count_output: 20,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+
+  const result = buildTriageMessage({
+    issue: fakeIssue,
+    classification: fakeClassification,
+    recommendation,
+    repoFullName: "Arushi2121/test-for-triage",
+    issueUrl: "https://github.com/Arushi2121/test-for-triage/issues/99",
+    draft: approvedDraft as never,
+  });
+
+  assert.strictEqual(result.blocks.length, 4, "Expected 4 blocks when draft is non-pending");
+  console.log("✓ Message with non-pending draft produces 4 blocks (no draft section)");
+}
+
 console.log("\n✓ All Layer 5 Block B tests passed");

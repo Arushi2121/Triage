@@ -376,6 +376,7 @@ export async function handleGitHubEvent(
           recommendation,
           repoFullName: repo,
           issueUrl,
+          draft: savedDraft,
         });
         await postMessage({
           channel: TEMP_DEFAULT_CHANNEL,

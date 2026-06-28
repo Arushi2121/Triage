@@ -1,4 +1,4 @@
-import type { Issue, Classification } from "@/types/db";
+import type { Issue, Classification, Draft } from "@/types/db";
 import type { TriageRecommendation } from "@/types/triage";
 
 interface DuplicateMatchMetadata {
@@ -59,8 +59,9 @@ export function buildTriageMessage(params: {
   recommendation: TriageRecommendation;
   repoFullName: string;
   issueUrl: string;
+  draft?: Draft | null; // Optional: draft to display with Approve/Skip buttons
 }): { text: string; blocks: unknown[] } {
-  const { issue, classification, recommendation, repoFullName, issueUrl } =
+  const { issue, classification, recommendation, repoFullName, issueUrl, draft } =
     params;
 
   const emoji = EMOJI_MAP[recommendation.type] || "📥";
@@ -119,6 +120,47 @@ export function buildTriageMessage(params: {
         type: "mrkdwn",
         text: `🔁 *Similar to:* <${dupUrl}|#${duplicateMatch.duplicate_of_github_number} — ${duplicateMatch.duplicate_of_title}>${similarityText}`,
       },
+    });
+  }
+
+  // Block 3.7: Draft response (only when draft exists and is pending)
+  if (draft && draft.status === "pending" && draft.content && draft.content.length > 0) {
+    // Section block showing the draft content in a quoted style
+    blocks.push({
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: `*📝 Proposed response:*\n>${draft.content.split("\n").join("\n>")}`,
+      },
+    });
+
+    // Actions block with Approve and Skip buttons
+    blocks.push({
+      type: "actions",
+      block_id: `draft_actions_${draft.id}`,
+      elements: [
+        {
+          type: "button",
+          text: {
+            type: "plain_text",
+            text: "✅ Approve & Post",
+            emoji: true,
+          },
+          style: "primary",
+          action_id: `draft_approve_${draft.id}`,
+          value: draft.id,
+        },
+        {
+          type: "button",
+          text: {
+            type: "plain_text",
+            text: "⊘ Skip",
+            emoji: true,
+          },
+          action_id: `draft_skip_${draft.id}`,
+          value: draft.id,
+        },
+      ],
     });
   }
 
