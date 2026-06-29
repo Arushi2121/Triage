@@ -2,11 +2,14 @@
 
 Items intentionally postponed during development. NOT bugs. NOT missing functionality. Conscious tradeoffs with clear revisit triggers.
 
-Last updated: 2026-06-28
+Last updated: 2026-06-28 (evening)
 
 ---
 
 ## Quick Index by Revisit Trigger
+
+### Tomorrow morning (quota refresh)
+- [Layer 7] Block D visual verification in Slack
 
 ### Cosmetic (anytime)
 - [Layer 1] Slack app display name still shows "PilotApp" in workspace
@@ -14,6 +17,7 @@ Last updated: 2026-06-28
 ### Before launch (last week of June 2026)
 - [Layer 3] installation.created event handler
 - [Layer 3] installation.deleted event handler
+- [Layer 4/6/7] Gemini free tier rate limits (20 req/day insufficient for pilot)
 
 ### Pilot feedback-driven (Week of June 22-29)
 - [Layer 4] Prompt quality improvements based on misclassifications
@@ -98,6 +102,16 @@ Last updated: 2026-06-28
 **What:** DUPLICATE_SIMILARITY_THRESHOLD is set to 0.85 in src/core/triage/decide.ts based on Block A semantic similarity tests (similar issues scored ~0.79 in synthetic test).
 **Why deferred:** Real-world calibration requires actual repo data and maintainer feedback. May need to be lowered (catch more) or raised (fewer false positives).
 **Revisit trigger:** Pilot week. Track false positives and false negatives. Adjust threshold based on real maintainer feedback.
+
+### [Layer 7] Block D visual verification
+**What:** Block D rendered correctly per unit tests (11 passing) but Slack visual verification was blocked by Gemini free-tier quota (20 req/day exhausted).
+**Why deferred:** Gemini quota resets at midnight Pacific. Trivial test once quota refreshes.
+**Revisit trigger:** Tomorrow morning — open one test issue, screenshot the Slack message, verify draft block + Approve/Skip buttons render correctly.
+
+### [Layer 4/6/7] Gemini free tier rate limits
+**What:** Gemini 2.5 Flash free tier is 20 requests/day. Each Triage webhook uses 3-5 calls (classify, embed, draft, sometimes duplicate detection). Realistically supports ~5-6 issues/day in testing.
+**Why deferred:** Acceptable for solo development. NOT acceptable for pilot users (a real maintainer would hit this in their first hour).
+**Revisit trigger:** BEFORE PILOT LAUNCH. Either upgrade Gemini billing tier OR move to paid model. Estimated cost at pilot volume: $0.10-1.00/day per maintainer.
 
 ### [Layer 2] Per-user LLM credentials
 **What:** Currently single GEMINI_API_KEY env var. Future: each user provides their own.
