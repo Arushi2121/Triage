@@ -4,12 +4,12 @@ import { upsertInstallation } from "@/db/installations";
 import { upsertRepo } from "@/db/repos";
 import { upsertIssue, updateIssueEmbedding } from "@/db/issues";
 import { insertWebhookEvent } from "@/db/webhook_events";
-import { classifyIssue } from "@/integrations/llm/classify";
+import { classifyIssue, classifyPR } from "@/integrations/llm/classify";
 import { upsertClassification } from "@/db/classifications";
-import { decideTriageActions } from "@/core/triage/decide";
+import { decideTriageActions, decideTriageActionsForPR } from "@/core/triage/decide";
 import { buildTriageMessage } from "@/formatters/slack/triage_message";
 import { embedIssueForStorage } from "@/integrations/llm/embed";
-import { draftResponse } from "@/integrations/llm/draft";
+import { draftResponse, draftPRResponse } from "@/integrations/llm/draft";
 import { insertDraft } from "@/db/drafts";
 
 const TEMP_DEFAULT_CHANNEL = "C0B5AG6F747";
@@ -437,6 +437,10 @@ export async function handleGitHubEvent(
     let storageFailed = false;
     let issueId: string | null = null;
     let savedIssue: Awaited<ReturnType<typeof upsertIssue>> | null = null;
+    let savedClassification: Awaited<ReturnType<typeof upsertClassification>> | null = null;
+    let savedEmbedding: number[] | null = null;
+    let recommendation: import("@/types/triage").TriageRecommendation | null = null;
+    let savedDraft: Awaited<ReturnType<typeof insertDraft>> | null = null;
 
     try {
       // STEP 1: Validate payload
@@ -565,18 +569,182 @@ export async function handleGitHubEvent(
       storageFailed = true;
     }
 
-    // Block A: NO classification, embedding, decide, draft, or rich Slack post yet.
-    // Just post a plain text notification so we know the webhook fired.
+    // STEP 5.5: Classify the PR
+    if (!storageFailed && savedIssue && issueId !== null && payload.pull_request) {
+      try {
+        const result = await classifyPR({
+          prTitle: payload.pull_request.title,
+          prBody: payload.pull_request.body,
+          repoFullName: payload.repository!.full_name,
+          additions: payload.pull_request.additions ?? 0,
+          deletions: payload.pull_request.deletions ?? 0,
+          changedFiles: payload.pull_request.changed_files ?? 0,
+          isDraft: payload.pull_request.draft ?? false,
+        });
+        
+        savedClassification = await upsertClassification({
+          issue_id: issueId,
+          issue_type: result.classification.pr_type,
+          severity: result.classification.risk,
+          confidence: result.classification.confidence,
+          reasoning: result.classification.reasoning,
+          suggested_labels: result.classification.suggested_labels,
+          raw_llm_response: result.rawResponse as never,
+          prompt_version: result.promptVersion,
+          llm_model: result.model,
+          llm_temperature: result.temperature,
+          token_count_input: result.tokenCountInput,
+          token_count_output: result.tokenCountOutput,
+        });
+        
+        console.log(
+          `✓ Classified PR #${payload.pull_request.number} as ${result.classification.pr_type}/${result.classification.risk}`,
+        );
+      } catch (error) {
+        console.error("PR classification failed:", error);
+      }
+    }
+
+    // STEP 5.7: Generate and save embedding
+    if (!storageFailed && savedIssue && issueId !== null && payload.pull_request) {
+      try {
+        const embedResult = await embedIssueForStorage({
+          title: payload.pull_request.title,
+          body: payload.pull_request.body,
+        });
+        savedEmbedding = embedResult.embedding;
+        await updateIssueEmbedding(issueId, embedResult.embedding, embedResult.model);
+        console.log(
+          `✓ Embedded PR #${payload.pull_request.number} (${embedResult.embedding.length} dims)`,
+        );
+      } catch (error) {
+        console.error("PR embedding generation failed:", error);
+      }
+    }
+
+    // STEP 5.6: Decide triage actions for PR
+    if (savedIssue && savedClassification && payload.pull_request) {
+      try {
+        recommendation = await decideTriageActionsForPR({
+          issue: savedIssue,
+          classification: savedClassification,
+          embedding: savedEmbedding ?? undefined,
+          additions: payload.pull_request.additions ?? 0,
+          deletions: payload.pull_request.deletions ?? 0,
+          changedFiles: payload.pull_request.changed_files ?? 0,
+          isDraft: payload.pull_request.draft ?? false,
+        });
+        
+        const dupNote =
+          recommendation.type === "flag-duplicate" &&
+          recommendation.metadata.duplicate_of_github_number
+            ? ` (duplicate of #${recommendation.metadata.duplicate_of_github_number})`
+            : "";
+        console.log(
+          `✓ Triage recommendation for PR #${payload.pull_request.number}: ${recommendation.type} (priority: ${recommendation.priority})${dupNote}`,
+        );
+      } catch (error) {
+        console.error("PR triage decision failed:", error);
+      }
+    }
+
+    // STEP 5.8: Generate draft response (skip for urgent-attention type)
+    if (
+      savedIssue &&
+      savedClassification &&
+      recommendation &&
+      recommendation.type !== "urgent-attention" &&
+      payload.pull_request
+    ) {
+      try {
+        // Build duplicate context for flag-duplicate type
+        let duplicateContext: { number: number; title: string } | undefined = undefined;
+        if (recommendation.type === "flag-duplicate") {
+          const dupNumber = recommendation.metadata.duplicate_of_github_number;
+          const dupTitle = recommendation.metadata.duplicate_of_title;
+          if (typeof dupNumber === "number" && typeof dupTitle === "string") {
+            duplicateContext = { number: dupNumber, title: dupTitle };
+          }
+        }
+        
+        const draftResult = await draftPRResponse({
+          prTitle: payload.pull_request.title,
+          prBody: payload.pull_request.body,
+          repoFullName: payload.repository!.full_name,
+          prAuthor: payload.pull_request.user.login,
+          classificationType: savedClassification.issue_type,
+          classificationRisk: savedClassification.severity,
+          classificationReasoning: savedClassification.reasoning,
+          recommendationType: recommendation.type,
+          additions: payload.pull_request.additions ?? 0,
+          deletions: payload.pull_request.deletions ?? 0,
+          changedFiles: payload.pull_request.changed_files ?? 0,
+          duplicateContext,
+        });
+        
+        // Map PR recommendation type to draft_type per schema CHECK constraint
+        const draftTypeMap: Record<string, string> = {
+          "approve-merge": "comment",
+          "request-review": "comment",
+          "request-changes": "comment",
+          "close-as-stale": "comment",
+          "notify-only": "comment",
+          "flag-duplicate": "close-as-duplicate",
+        };
+        const draftType = draftTypeMap[recommendation.type] ?? "comment";
+        
+        savedDraft = await insertDraft({
+          issue_id: savedIssue.id,
+          classification_id: savedClassification.id,
+          draft_type: draftType,
+          content: draftResult.draft.draft_content,
+          raw_llm_response: draftResult.rawResponse as never,
+          prompt_version: draftResult.promptVersion,
+          llm_model: draftResult.model,
+          llm_temperature: draftResult.temperature,
+          token_count_input: draftResult.tokenCountInput,
+          token_count_output: draftResult.tokenCountOutput,
+        });
+        
+        console.log(
+          `✓ Drafted PR response for #${payload.pull_request.number} (type: ${draftType}, confidence: ${draftResult.draft.confidence})`,
+        );
+      } catch (error) {
+        console.error("PR draft generation failed:", error);
+      }
+    }
+
+    // STEP 7: Post to Slack
     try {
       const title = payload.pull_request?.title || "Untitled";
       const author = payload.pull_request?.user?.login || "unknown";
       const repo = payload.repository?.full_name || "unknown";
-      const flagSuffix = storageFailed ? " (storage failed)" : "";
-      const message = `${eventDescriptor}${flagSuffix}: ${title} by ${author} in ${repo}`;
-      await postMessage({
-        channel: TEMP_DEFAULT_CHANNEL,
-        text: message,
-      });
+      
+      // Path A: rich message when we have full pipeline data
+      if (recommendation && savedIssue && savedClassification) {
+        const issueUrl = `https://github.com/${repo}/pull/${payload.pull_request!.number}`;
+        const { text, blocks } = buildTriageMessage({
+          issue: savedIssue,
+          classification: savedClassification,
+          recommendation,
+          repoFullName: repo,
+          issueUrl,
+          draft: savedDraft,
+        });
+        await postMessage({
+          channel: TEMP_DEFAULT_CHANNEL,
+          text,
+          blocks,
+        });
+      } else {
+        // Path B: plain text fallback when classification/recommendation failed
+        const flagSuffix = storageFailed ? " (storage failed)" : "";
+        const message = `${eventDescriptor}${flagSuffix}: ${title} by ${author} in ${repo}`;
+        await postMessage({
+          channel: TEMP_DEFAULT_CHANNEL,
+          text: message,
+        });
+      }
     } catch (slackError) {
       console.error("Failed to post PR notification to Slack:", slackError);
     }
