@@ -63,6 +63,39 @@ interface GitHubWebhookPayload {
     updated_at: string;
     closed_at: string | null;
   };
+  pull_request?: {
+    id: number;
+    number: number;
+    node_id: string;
+    title: string;
+    body: string | null;
+    state: "open" | "closed";
+    merged: boolean;
+    merged_at: string | null;
+    draft: boolean;
+    user: { id: number; login: string };
+    author_association: string;
+    labels: Array<{ name: string; color: string }>;
+    assignees: Array<{ id: number; login: string }>;
+    requested_reviewers: Array<{ id: number; login: string }>;
+    comments: number;
+    review_comments: number;
+    commits: number;
+    additions: number;
+    deletions: number;
+    changed_files: number;
+    head: {
+      ref: string;
+      sha: string;
+    };
+    base: {
+      ref: string;
+      sha: string;
+    };
+    created_at: string;
+    updated_at: string;
+    closed_at: string | null;
+  };
 }
 
 export async function handleGitHubEvent(
@@ -397,6 +430,158 @@ export async function handleGitHubEvent(
     }
   }
 
+  async function persistAndNotifyPullRequestEvent(
+    eventDescriptor: "New PR" | "PR closed" | "PR reopened" | "PR updated",
+    requireClosedAt: boolean = false,
+  ): Promise<void> {
+    let storageFailed = false;
+    let issueId: string | null = null;
+    let savedIssue: Awaited<ReturnType<typeof upsertIssue>> | null = null;
+
+    try {
+      // STEP 1: Validate payload
+      if (!payload.installation?.id) {
+        throw new Error("Missing installation.id in webhook payload");
+      }
+      if (!payload.repository?.id) {
+        throw new Error("Missing repository.id in webhook payload");
+      }
+      if (!payload.repository?.full_name) {
+        throw new Error("Missing repository.full_name in webhook payload");
+      }
+      if (!payload.repository.owner?.id) {
+        throw new Error("Missing repository.owner.id in webhook payload");
+      }
+      if (!payload.repository.owner?.login) {
+        throw new Error("Missing repository.owner.login in webhook payload");
+      }
+      if (!payload.repository.owner?.type) {
+        throw new Error("Missing repository.owner.type in webhook payload");
+      }
+      if (!payload.pull_request?.id) {
+        throw new Error("Missing pull_request.id in webhook payload");
+      }
+      if (!payload.pull_request?.number) {
+        throw new Error("Missing pull_request.number in webhook payload");
+      }
+      if (!payload.pull_request?.node_id) {
+        throw new Error("Missing pull_request.node_id in webhook payload");
+      }
+      if (!payload.pull_request?.title) {
+        throw new Error("Missing pull_request.title in webhook payload");
+      }
+      if (!payload.pull_request?.state) {
+        throw new Error("Missing pull_request.state in webhook payload");
+      }
+      if (!payload.pull_request?.user?.id) {
+        throw new Error("Missing pull_request.user.id in webhook payload");
+      }
+      if (!payload.pull_request?.user?.login) {
+        throw new Error("Missing pull_request.user.login in webhook payload");
+      }
+      if (!payload.pull_request?.author_association) {
+        throw new Error(
+          "Missing pull_request.author_association in webhook payload",
+        );
+      }
+      if (!payload.pull_request?.created_at) {
+        throw new Error("Missing pull_request.created_at in webhook payload");
+      }
+      if (!payload.pull_request?.updated_at) {
+        throw new Error("Missing pull_request.updated_at in webhook payload");
+      }
+
+      // STEP 2: Upsert user (the repository owner)
+      const user = await upsertUserByGithubId({
+        github_id: payload.repository.owner.id,
+        github_username: payload.repository.owner.login,
+      });
+
+      // STEP 3: Upsert installation
+      const installation = await upsertInstallation({
+        user_id: user.id,
+        github_installation_id: payload.installation.id,
+        github_account_login: payload.repository.owner.login,
+        github_account_id: payload.repository.owner.id,
+        github_account_type: payload.repository.owner.type,
+        github_target_type: "all",
+      });
+
+      // STEP 4: Upsert repo
+      const repo = await upsertRepo({
+        installation_id: installation.id,
+        github_repo_id: payload.repository.id,
+        github_full_name: payload.repository.full_name,
+        github_default_branch: payload.repository.default_branch || "main",
+        github_private: payload.repository.private ?? false,
+        star_count: payload.repository.stargazers_count ?? 0,
+        issue_count_open: payload.repository.open_issues_count ?? 0,
+        language_primary: payload.repository.language,
+        description: payload.repository.description,
+      });
+
+      // STEP 5: Upsert the PR as an issue row with is_pull_request=true
+      savedIssue = await upsertIssue({
+        repo_id: repo.id,
+        github_issue_id: payload.pull_request.id,
+        github_issue_number: payload.pull_request.number,
+        github_node_id: payload.pull_request.node_id,
+        title: payload.pull_request.title,
+        body: payload.pull_request.body,
+        state: payload.pull_request.state,
+        author_github_id: payload.pull_request.user.id,
+        author_github_login: payload.pull_request.user.login,
+        author_association: payload.pull_request.author_association,
+        labels: (payload.pull_request.labels ?? []) as never,
+        assignees: (payload.pull_request.assignees ?? []) as never,
+        comments_count: payload.pull_request.comments ?? 0,
+        reactions: {} as never,
+        is_pull_request: true,
+        github_created_at: payload.pull_request.created_at,
+        github_updated_at: payload.pull_request.updated_at,
+        github_closed_at: payload.pull_request.closed_at,
+      });
+      issueId = savedIssue.id;
+
+      // STEP 6: Insert webhook_event row (audit log)
+      await insertWebhookEvent({
+        installation_id: installation.id,
+        repo_id: repo.id,
+        issue_id: savedIssue.id,
+        github_delivery_id: deliveryId,
+        event_type: "pull_request",
+        event_action: payload.action ?? null,
+        payload: payload as never,
+        signature_valid: true,
+        processing_status: "completed",
+        processed_at: new Date().toISOString(),
+      });
+
+      console.log(
+        `✓ Stored PR #${payload.pull_request.number} from ${payload.repository.full_name}`,
+      );
+    } catch (error) {
+      console.error("Failed to store PR webhook data:", error);
+      storageFailed = true;
+    }
+
+    // Block A: NO classification, embedding, decide, draft, or rich Slack post yet.
+    // Just post a plain text notification so we know the webhook fired.
+    try {
+      const title = payload.pull_request?.title || "Untitled";
+      const author = payload.pull_request?.user?.login || "unknown";
+      const repo = payload.repository?.full_name || "unknown";
+      const flagSuffix = storageFailed ? " (storage failed)" : "";
+      const message = `${eventDescriptor}${flagSuffix}: ${title} by ${author} in ${repo}`;
+      await postMessage({
+        channel: TEMP_DEFAULT_CHANNEL,
+        text: message,
+      });
+    } catch (slackError) {
+      console.error("Failed to post PR notification to Slack:", slackError);
+    }
+  }
+
   switch (eventType) {
     case "issues": {
       if (payload.action === "opened") {
@@ -408,6 +593,20 @@ export async function handleGitHubEvent(
       } else if (payload.action === "edited") {
         await persistAndNotifyIssueEvent("Issue edited");
       }
+      break;
+    }
+
+    case "pull_request": {
+      if (payload.action === "opened") {
+        await persistAndNotifyPullRequestEvent("New PR", false);
+      } else if (payload.action === "closed") {
+        await persistAndNotifyPullRequestEvent("PR closed", true);
+      } else if (payload.action === "reopened") {
+        await persistAndNotifyPullRequestEvent("PR reopened");
+      } else if (payload.action === "synchronize") {
+        await persistAndNotifyPullRequestEvent("PR updated");
+      }
+      // Other PR actions (review_requested, labeled, etc.) ignored for v1
       break;
     }
 
