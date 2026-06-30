@@ -6,6 +6,12 @@ import {
   buildDraftPrompt,
   PROMPT_VERSION,
 } from "./prompts/draft_response";
+import {
+  PRDraftOutputSchema,
+  PRDraftOutput,
+  buildDraftPRPrompt,
+  PROMPT_VERSION as PR_DRAFT_PROMPT_VERSION,
+} from "./prompts/draft_pr_response";
 
 export async function draftResponse(params: {
   issueTitle: string;
@@ -119,5 +125,104 @@ export async function draftResponse(params: {
     tokenCountInput,
     tokenCountOutput,
     promptVersion: PROMPT_VERSION,
+  };
+}
+
+export async function draftPRResponse(params: {
+  prTitle: string;
+  prBody: string | null;
+  repoFullName: string;
+  prAuthor: string;
+  classificationType: string;
+  classificationRisk: string;
+  classificationReasoning: string;
+  recommendationType: string;
+  additions: number;
+  deletions: number;
+  changedFiles: number;
+  duplicateContext?: { number: number; title: string };
+}): Promise<{
+  draft: PRDraftOutput;
+  rawResponse: object;
+  model: string;
+  temperature: number;
+  tokenCountInput: number;
+  tokenCountOutput: number;
+  promptVersion: string;
+}> {
+  const {
+    prTitle, prBody, repoFullName, prAuthor,
+    classificationType, classificationRisk, classificationReasoning,
+    recommendationType, additions, deletions, changedFiles, duplicateContext,
+  } = params;
+  
+  const ai = getGeminiClient();
+  const prompt = buildDraftPRPrompt({
+    prTitle, prBody, repoFullName, prAuthor,
+    classificationType, classificationRisk, classificationReasoning,
+    recommendationType, additions, deletions, changedFiles, duplicateContext,
+  });
+  const jsonSchema = zodToJsonSchema(PRDraftOutputSchema);
+  
+  const MODEL = "gemini-2.5-flash";
+  const TEMPERATURE = 0.4;
+  
+  const response = await ai.models.generateContent({
+    model: MODEL,
+    contents: prompt,
+    config: {
+      responseMimeType: "application/json",
+      responseJsonSchema: jsonSchema,
+      temperature: TEMPERATURE,
+    },
+  });
+  
+  const textResponse = response.text;
+  if (!textResponse) {
+    throw new Error("Gemini response is missing text content");
+  }
+  
+  let parsedJson: unknown;
+  try {
+    parsedJson = JSON.parse(textResponse);
+  } catch (parseError) {
+    throw new Error(`Failed to parse PR draft response as JSON: ${parseError instanceof Error ? parseError.message : String(parseError)}`);
+  }
+  
+  const validation = PRDraftOutputSchema.safeParse(parsedJson);
+  if (!validation.success) {
+    throw new Error(`PR draft response failed schema validation: ${validation.error.message}`);
+  }
+  
+  type UsageMetadataShape = {
+    promptTokenCount?: number;
+    candidatesTokenCount?: number;
+    inputTokenCount?: number;
+    outputTokenCount?: number;
+  };
+  
+  let tokenCountInput = 0;
+  let tokenCountOutput = 0;
+  if (response.usageMetadata) {
+    const metadata = response.usageMetadata as UsageMetadataShape;
+    if ("promptTokenCount" in metadata && "candidatesTokenCount" in metadata) {
+      tokenCountInput = metadata.promptTokenCount ?? 0;
+      tokenCountOutput = metadata.candidatesTokenCount ?? 0;
+    } else if ("inputTokenCount" in metadata && "outputTokenCount" in metadata) {
+      tokenCountInput = metadata.inputTokenCount ?? 0;
+      tokenCountOutput = metadata.outputTokenCount ?? 0;
+    } else {
+      console.warn("Unknown usageMetadata format:", metadata);
+    }
+  }
+  
+  return {
+    draft: validation.data,
+    rawResponse: parsedJson as object,
+    model: MODEL,
+    temperature: TEMPERATURE,
+    tokenCountInput,
+    tokenCountOutput,
+    promptVersion: PR_DRAFT_PROMPT_VERSION,
   };
 }
