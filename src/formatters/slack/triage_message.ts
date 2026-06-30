@@ -134,7 +134,7 @@ export function buildTriageMessage(params: {
       },
     });
 
-    // Actions block with Approve and Skip buttons
+    // Actions block with Approve, Edit, and Skip buttons
     blocks.push({
       type: "actions",
       block_id: `draft_actions_${draft.id}`,
@@ -148,6 +148,16 @@ export function buildTriageMessage(params: {
           },
           style: "primary",
           action_id: `draft_approve_${draft.id}`,
+          value: draft.id,
+        },
+        {
+          type: "button",
+          text: {
+            type: "plain_text",
+            text: "✏️ Edit",
+            emoji: true,
+          },
+          action_id: `draft_edit_${draft.id}`,
           value: draft.id,
         },
         {

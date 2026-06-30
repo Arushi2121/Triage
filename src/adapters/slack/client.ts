@@ -2,6 +2,7 @@ import { App } from "@slack/bolt";
 import { VercelReceiver } from "@vercel/slack-bolt";
 
 import { registerSlackEvents } from "./events";
+import { registerSlackActions } from "./actions";
 
 function validateSlackEnv(): { botToken: string; signingSecret: string } {
   const botToken = process.env.SLACK_BOT_TOKEN;
@@ -43,6 +44,7 @@ function initializeSlack(): { app: App; receiver: VercelReceiver } {
     });
 
     registerSlackEvents(app);
+    registerSlackActions(app);
   }
 
   return { app, receiver };

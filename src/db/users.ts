@@ -58,6 +58,27 @@ export async function getUserBySlackId(
   return data;
 }
 
+export async function getUserByGithubUsername(
+  githubUsername: string,
+): Promise<User | null> {
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase
+    .from("users")
+    .select("*")
+    .eq("github_username", githubUsername)
+    .is("deleted_at", null)
+    .single();
+  if (error) {
+    if (error.code === "PGRST116") {
+      return null;
+    }
+    throw new Error(
+      `Failed to get user by GitHub username: ${error.message}`,
+    );
+  }
+  return data;
+}
+
 export async function linkSlackToGithubUser(
   githubUserId: number,
   slackUserId: string,
