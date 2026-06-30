@@ -84,8 +84,6 @@ export async function handleGitHubEvent(
   ): Promise<void> {
     let storageFailed = false;
     let classificationFailed = false;
-    let embeddingFailed = false;
-    let draftFailed = false;
     let savedDraft: Awaited<ReturnType<typeof insertDraft>> | null = null;
     let issueId: string | null = null;
     let savedIssue: Awaited<ReturnType<typeof upsertIssue>> | null = null;
@@ -273,7 +271,6 @@ export async function handleGitHubEvent(
         );
       } catch (error) {
         console.error("Embedding generation failed:", error);
-        embeddingFailed = true;
       }
     }
 
@@ -357,7 +354,6 @@ export async function handleGitHubEvent(
         );
       } catch (error) {
         console.error("Draft generation failed:", error);
-        draftFailed = true;
       }
     }
 
