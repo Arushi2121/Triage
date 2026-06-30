@@ -1,5 +1,6 @@
-import type { TriageContext, TriageRecommendation } from "@/types/triage";
+import type { TriageContext, TriageRecommendation, PRTriageContext } from "@/types/triage";
 import { applyRules } from "./rules";
+import { applyPRRules } from "./pr_rules";
 import { findSimilarIssues } from "@/db/issues";
 
 // Threshold above which we consider an issue a duplicate.
@@ -66,6 +67,50 @@ export async function decideTriageActions(
     // Duplicate detection failure should not block the recommendation flow.
     // Log and fall back to rule-based recommendation.
     console.error("Duplicate detection failed in decideTriageActions:", error);
+    return ruleBasedRecommendation;
+  }
+}
+
+export async function decideTriageActionsForPR(
+  context: PRTriageContext,
+): Promise<TriageRecommendation> {
+  const ruleBasedRecommendation = applyPRRules(context);
+  
+  // If we don't have an embedding, return the rule-based recommendation as-is
+  if (!context.embedding) {
+    return ruleBasedRecommendation;
+  }
+  
+  // Check for duplicate PRs (same as issues — duplicate PRs are real)
+  try {
+    const similarIssues = await findSimilarIssues({
+      repoId: context.issue.repo_id,
+      embedding: context.embedding,
+      similarityThreshold: DUPLICATE_SIMILARITY_THRESHOLD,
+      limit: MAX_DUPLICATE_CANDIDATES,
+      excludeIssueId: context.issue.id,
+    });
+    
+    if (similarIssues.length === 0) {
+      return ruleBasedRecommendation;
+    }
+    
+    // Override to flag-duplicate
+    const topMatch = similarIssues[0];
+    return {
+      type: "flag-duplicate",
+      priority: "low",
+      reasoning: `Likely duplicate PR (${(topMatch.similarity * 100).toFixed(1)}% similar to #${topMatch.github_issue_number}: "${topMatch.title}").`,
+      suggested_action: `Likely duplicate of #${topMatch.github_issue_number}. Review before merging.`,
+      metadata: {
+        duplicate_of_issue_id: topMatch.id,
+        duplicate_of_github_number: topMatch.github_issue_number,
+        duplicate_of_title: topMatch.title,
+        similarity: topMatch.similarity,
+      },
+    };
+  } catch (error) {
+    console.error("PR duplicate detection failed:", error);
     return ruleBasedRecommendation;
   }
 }
