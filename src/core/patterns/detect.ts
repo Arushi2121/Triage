@@ -8,7 +8,12 @@ import {
 import { addIssueToPattern } from "@/db/issue_patterns";
 import { getSupabaseClient } from "@/db/client";
 
-const SIMILARITY_THRESHOLD = 0.72;
+// Chosen empirically from analysis of test data. At 0.72 unrelated issues
+// ("Add CSV export" vs "Add 2FA login") clustered together due to shared
+// structural patterns. At 0.82, thematic clusters emerge while noise drops.
+// For duplicate detection (Layer 6), we use 0.85 — patterns should be
+// slightly looser than duplicates but tighter than random topic overlap.
+const SIMILARITY_THRESHOLD = 0.82;
 const MIN_CLUSTER_SIZE = 3;
 const EXISTING_PATTERN_MATCH_THRESHOLD = 0.80;
 
@@ -137,9 +142,14 @@ export async function detectPatterns(params: {
       // Link new issues (skip if already linked — rely on unique constraint or catch error)
       for (const item of cluster) {
         try {
-          await addIssueToPattern(bestMatch.pattern.id, item.issue.id, 0.85, "retroactive-cluster");
+          await addIssueToPattern(bestMatch.pattern.id, item.issue.id, 0.85, "similarity-clustering");
         } catch (err) {
-          // Likely duplicate link; ignore
+          // Duplicate link (PK constraint) is expected on re-runs and safe to ignore.
+          // Log other errors so we notice CHECK constraint failures or similar.
+          const errMsg = err instanceof Error ? err.message : String(err);
+          if (!errMsg.includes("duplicate key")) {
+            console.error(`Failed to link issue to pattern: ${errMsg}`);
+          }
         }
       }
       
@@ -187,9 +197,14 @@ export async function detectPatterns(params: {
       // Link all cluster issues
       for (const item of cluster) {
         try {
-          await addIssueToPattern(newPattern.id, item.issue.id, summary.summary.confidence, "retroactive-cluster");
+          await addIssueToPattern(newPattern.id, item.issue.id, summary.summary.confidence, "similarity-clustering");
         } catch (err) {
-          // Ignore duplicate link errors
+          // Duplicate link (PK constraint) is expected on re-runs and safe to ignore.
+          // Log other errors so we notice CHECK constraint failures or similar.
+          const errMsg = err instanceof Error ? err.message : String(err);
+          if (!errMsg.includes("duplicate key")) {
+            console.error(`Failed to link issue to pattern: ${errMsg}`);
+          }
         }
       }
       
