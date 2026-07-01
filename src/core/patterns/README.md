@@ -1,5 +1,3 @@
 # core/patterns
 
-Platform-agnostic pattern matching and rule engine.
-
-Defines reusable triage patterns (e.g. bug reports, feature requests, support questions) and applies them to classify and tag issues. Rules are data-driven and testable in isolation.
+Cross-issue pattern detection via retroactive clustering. Groups similar issues by embeddings and generates maintainer-facing pattern summaries.
