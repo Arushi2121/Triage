@@ -96,3 +96,20 @@ export async function linkSlackToGithubUser(
   }
   return data;
 }
+
+export async function getUserByApiKey(apiKey: string): Promise<User | null> {
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase
+    .from("users")
+    .select("*")
+    .eq("api_key", apiKey)
+    .is("deleted_at", null)
+    .single();
+  if (error) {
+    if (error.code === "PGRST116") {
+      return null;
+    }
+    throw new Error(`Failed to get user by API key: ${error.message}`);
+  }
+  return data;
+}
