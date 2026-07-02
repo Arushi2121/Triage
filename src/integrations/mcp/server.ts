@@ -4,31 +4,33 @@ import {
   ListPatternsInputSchema,
   executeListPatterns,
 } from "./tools/list_patterns";
+import {
+  SearchSimilarIssuesInputSchema,
+  executeSearchSimilarIssues,
+} from "./tools/search_similar_issues";
 
 export interface McpToolDefinition {
   name: string;
   description: string;
-  inputSchema: unknown;  // JSON Schema object
+  inputSchema: unknown;
 }
 
-/**
- * Registry of tools available for a given user.
- * All tools are user-scoped — they only see the user's data.
- */
 export function getToolsForUser(user: User): McpToolDefinition[] {
-  void user;  // reserved for future per-user tool filtering
+  void user;
   return [
     {
       name: "list_patterns",
       description: "List cross-issue patterns detected by Triage in the maintainer's repositories. Patterns are themes across multiple issues (e.g., 'Documentation quality issues', 'Dev environment setup friction'). Returns patterns with title, description, category, severity, and issue count.",
       inputSchema: zodToJsonSchema(ListPatternsInputSchema, { target: "openApi3" }),
     },
+    {
+      name: "search_similar_issues",
+      description: "Search for GitHub issues semantically similar to a natural language query. Uses vector embeddings — matches on meaning, not just keywords. Returns issues with similarity score, title, body excerpt, classification, and GitHub URL. Useful for finding related issues, checking if a bug has been reported before, or discovering patterns across the maintainer's backlog.",
+      inputSchema: zodToJsonSchema(SearchSimilarIssuesInputSchema, { target: "openApi3" }),
+    },
   ];
 }
 
-/**
- * Route a tool invocation to its handler by name.
- */
 export async function callToolForUser(params: {
   user: User;
   toolName: string;
@@ -45,34 +47,41 @@ export async function callToolForUser(params: {
       if (!parsed.success) {
         return {
           isError: true,
-          content: [
-            {
-              type: "text",
-              text: `Invalid input for list_patterns: ${parsed.error.message}`,
-            },
-          ],
+          content: [{ type: "text", text: `Invalid input for list_patterns: ${parsed.error.message}` }],
         };
       }
       try {
         const results = await executeListPatterns({ user, input: parsed.data });
         return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(results, null, 2),
-            },
-          ],
+          content: [{ type: "text", text: JSON.stringify(results, null, 2) }],
         };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         return {
           isError: true,
-          content: [
-            {
-              type: "text",
-              text: `Tool execution failed: ${msg}`,
-            },
-          ],
+          content: [{ type: "text", text: `Tool execution failed: ${msg}` }],
+        };
+      }
+    }
+
+    case "search_similar_issues": {
+      const parsed = SearchSimilarIssuesInputSchema.safeParse(toolArguments);
+      if (!parsed.success) {
+        return {
+          isError: true,
+          content: [{ type: "text", text: `Invalid input for search_similar_issues: ${parsed.error.message}` }],
+        };
+      }
+      try {
+        const results = await executeSearchSimilarIssues({ user, input: parsed.data });
+        return {
+          content: [{ type: "text", text: JSON.stringify(results, null, 2) }],
+        };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return {
+          isError: true,
+          content: [{ type: "text", text: `Tool execution failed: ${msg}` }],
         };
       }
     }
@@ -83,7 +92,7 @@ export async function callToolForUser(params: {
         content: [
           {
             type: "text",
-            text: `Unknown tool: ${toolName}. Available tools: list_patterns.`,
+            text: `Unknown tool: ${toolName}. Available tools: list_patterns, search_similar_issues.`,
           },
         ],
       };
