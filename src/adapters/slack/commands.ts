@@ -1,4 +1,5 @@
 import type { App } from "@slack/bolt";
+import { waitUntil } from "@vercel/functions";
 import { resolveSlackUser } from "@/core/auth/resolve_slack_user";
 import { sendLinkingPrompt } from "./dm";
 import { generateDigest } from "@/core/digests/generate";
@@ -231,16 +232,18 @@ export function registerSlackCommands(app: App): void {
 
       // 5. Kick off heavy work in the background — DO NOT await
       // This lets the handler return immediately while the digest generation
-      // continues via @vercel/slack-bolt's waitUntil mechanism.
-      runDigestBackground({
-        repoId: repo.repoId,
-        repoFullName: repo.repoFullName,
-        windowDays,
-        channelId,
-        client,
-      }).catch((err) => {
-        console.error("Background digest generation failed:", err);
-      });
+      // continues via @vercel/functions waitUntil mechanism.
+      waitUntil(
+        runDigestBackground({
+          repoId: repo.repoId,
+          repoFullName: repo.repoFullName,
+          windowDays,
+          channelId,
+          client,
+        }).catch((err) => {
+          console.error("Background digest generation failed:", err);
+        }),
+      );
 
       // Handler returns here — background promise continues
     } catch (error) {
