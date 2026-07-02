@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getUserByApiKey } from "@/db/users";
 import type { User } from "@/types/db";
+import { getToolsForUser, callToolForUser } from "@/integrations/mcp/server";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -95,24 +96,50 @@ async function handleMcpMethod(
         jsonrpc: "2.0",
         id,
         result: {
-          tools: [
-            // Block A: empty. Blocks B, C, D will add: list_patterns, get_digest, search_similar_issues.
-          ],
+          tools: getToolsForUser(user),
         },
       };
     }
 
     case "tools/call": {
-      // Block A: no tools registered
-      const params = req.params as { name?: string } | undefined;
-      return {
-        jsonrpc: "2.0",
-        id,
-        error: {
-          code: -32601,
-          message: `Tool not found: ${params?.name ?? "(unknown)"}. Available tools will be added in Layer 10 Blocks B/C/D.`,
-        },
-      };
+      const params = req.params as {
+        name?: string;
+        arguments?: Record<string, unknown>;
+      } | undefined;
+      
+      if (!params?.name) {
+        return {
+          jsonrpc: "2.0",
+          id,
+          error: {
+            code: -32602,
+            message: "Missing required 'name' parameter",
+          },
+        };
+      }
+      
+      try {
+        const result = await callToolForUser({
+          user,
+          toolName: params.name,
+          toolArguments: params.arguments ?? {},
+        });
+        return {
+          jsonrpc: "2.0",
+          id,
+          result,
+        };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return {
+          jsonrpc: "2.0",
+          id,
+          error: {
+            code: -32603,
+            message: `Tool execution error: ${msg}`,
+          },
+        };
+      }
     }
 
     default: {
