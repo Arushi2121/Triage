@@ -56,7 +56,6 @@ async function resolveDefaultRepo(userId: string): Promise<{
     .from("installations")
     .select("id")
     .eq("user_id", userId)
-    .is("deleted_at", null)
     .order("created_at", { ascending: true })
     .limit(1);
 
@@ -97,8 +96,7 @@ async function resolveSpecificRepo(
   const { data: installations, error: instError } = await supabase
     .from("installations")
     .select("id")
-    .eq("user_id", userId)
-    .is("deleted_at", null);
+    .eq("user_id", userId);
 
   if (instError || !installations || installations.length === 0) {
     return null;
