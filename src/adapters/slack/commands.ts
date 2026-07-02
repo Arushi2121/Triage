@@ -125,6 +125,59 @@ async function resolveSpecificRepo(
   };
 }
 
+/**
+ * Background digest generation.
+ * Runs after the command handler has returned. Errors here don't affect the
+ * user's Slack response — they're logged only.
+ */
+async function runDigestBackground(params: {
+  repoId: string;
+  repoFullName: string;
+  windowDays: number;
+  channelId: string;
+  client: import("@slack/bolt").App["client"];
+}): Promise<void> {
+  const { repoId, repoFullName, windowDays, channelId, client } = params;
+  
+  try {
+    // Compute time window
+    const windowEnd = new Date().toISOString();
+    const windowStart = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000).toISOString();
+
+    // Generate the digest (DB queries + pattern detection + LLM summarization)
+    const digest = await generateDigest({
+      repoId,
+      windowStart,
+      windowEnd,
+    });
+
+    // Format for Slack
+    const { text, blocks } = buildDigestMessage(digest);
+
+    // Post to channel
+    await client.chat.postMessage({
+      channel: channelId,
+      text,
+      blocks: blocks as never,
+    });
+
+    console.log(
+      `✓ Posted digest for ${repoFullName} (${digest.totalIssues} issues, ${digest.totalPRs} PRs, ${digest.patterns.length} patterns)`,
+    );
+  } catch (err) {
+    console.error(`Background digest failed for ${repoFullName}:`, err);
+    // Post error message to channel so user knows something went wrong
+    try {
+      await client.chat.postMessage({
+        channel: channelId,
+        text: `❌ Digest generation failed for *${repoFullName}*. Check server logs for details.`,
+      });
+    } catch (postErr) {
+      console.error("Also failed to post error message:", postErr);
+    }
+  }
+}
+
 export function registerSlackCommands(app: App): void {
   // /triage-digest command
   app.command("/triage-digest", async ({ ack, command, client, respond }) => {
@@ -172,38 +225,28 @@ export function registerSlackCommands(app: App): void {
         }
       }
 
-      // 4. Compute time window
-      const windowEnd = new Date().toISOString();
-      const windowStart = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000).toISOString();
-
-      // 5. Post interim message so user knows something is happening
+      // 4. Send interim ephemeral message (fast — stays within Slack's 3s window)
       await respond({
         response_type: "ephemeral",
         text: `⏳ Generating digest for *${repo.repoFullName}* (last ${windowDays} days)…`,
       });
 
-      // 6. Generate the digest (this is the heavy work — DB queries + pattern detection + LLM summarization)
-      const digest = await generateDigest({
+      // 5. Kick off heavy work in the background — DO NOT await
+      // This lets the handler return immediately while the digest generation
+      // continues via @vercel/slack-bolt's waitUntil mechanism.
+      runDigestBackground({
         repoId: repo.repoId,
-        windowStart,
-        windowEnd,
+        repoFullName: repo.repoFullName,
+        windowDays,
+        channelId,
+        client,
+      }).catch((err) => {
+        console.error("Background digest generation failed:", err);
       });
 
-      // 7. Format for Slack
-      const { text, blocks } = buildDigestMessage(digest);
-
-      // 8. Post to channel
-      await client.chat.postMessage({
-        channel: channelId,
-        text,
-        blocks: blocks as never,
-      });
-
-      console.log(
-        `✓ Posted digest for ${repo.repoFullName} (${digest.totalIssues} issues, ${digest.totalPRs} PRs, ${digest.patterns.length} patterns)`,
-      );
+      // Handler returns here — background promise continues
     } catch (error) {
-      console.error("Digest command failed:", error);
+      console.error("Digest command handler failed:", error);
       try {
         await respond({
           response_type: "ephemeral",
