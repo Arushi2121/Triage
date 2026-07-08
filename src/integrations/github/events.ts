@@ -11,6 +11,7 @@ import { buildTriageMessage } from "@/formatters/slack/triage_message";
 import { embedIssueForStorage } from "@/integrations/llm/embed";
 import { draftResponse, draftPRResponse } from "@/integrations/llm/draft";
 import { insertDraft } from "@/db/drafts";
+import { upsertDetectedDuplicate } from "@/db/issue_duplicates";
 
 const TEMP_DEFAULT_CHANNEL = "C0B5AG6F747";
 
@@ -325,6 +326,27 @@ export async function handleGitHubEvent(
         );
       } catch (error) {
         console.error("Triage decision failed:", error);
+      }
+    }
+
+    // Layer 6 v2: Persist detected duplicates for dashboard metrics
+    if (savedIssue && recommendation && recommendation.type === "flag-duplicate") {
+      const meta = recommendation.metadata as {
+        duplicate_of_issue_id?: string;
+        similarity?: number;
+      };
+      if (meta.duplicate_of_issue_id && typeof meta.similarity === "number") {
+        try {
+          await upsertDetectedDuplicate({
+            sourceIssueId: savedIssue.id,
+            duplicateOfIssueId: meta.duplicate_of_issue_id,
+            similarityScore: meta.similarity,
+            confidence: meta.similarity,
+          });
+        } catch (err) {
+          console.error("Failed to persist detected duplicate:", err);
+          // Non-blocking — Slack notification and drafting should still proceed
+        }
       }
     }
 
@@ -645,6 +667,27 @@ export async function handleGitHubEvent(
         );
       } catch (error) {
         console.error("PR triage decision failed:", error);
+      }
+    }
+
+    // Layer 6 v2: Persist detected duplicates for dashboard metrics
+    if (savedIssue && recommendation && recommendation.type === "flag-duplicate") {
+      const meta = recommendation.metadata as {
+        duplicate_of_issue_id?: string;
+        similarity?: number;
+      };
+      if (meta.duplicate_of_issue_id && typeof meta.similarity === "number") {
+        try {
+          await upsertDetectedDuplicate({
+            sourceIssueId: savedIssue.id,
+            duplicateOfIssueId: meta.duplicate_of_issue_id,
+            similarityScore: meta.similarity,
+            confidence: meta.similarity,
+          });
+        } catch (err) {
+          console.error("Failed to persist detected duplicate:", err);
+          // Non-blocking — Slack notification and drafting should still proceed
+        }
       }
     }
 
