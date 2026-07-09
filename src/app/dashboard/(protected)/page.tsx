@@ -15,34 +15,38 @@ export default async function OverviewPage() {
 
   return (
     <div className="max-w-6xl">
-      <div className="mb-8">
-        <h1 className="text-2xl font-semibold text-neutral-900 dark:text-neutral-100">
-          Overview
+      <div className="mb-10">
+        <p className="text-[10px] tracking-[0.25em] uppercase text-zinc-500 mb-2">
+          Dashboard // Overview
+        </p>
+        <h1 className="text-2xl font-medium tracking-tight text-zinc-100">
+          System Overview
         </h1>
-        <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-          Recent triage activity across your repos.
+        <p className="mt-2 text-sm text-zinc-500">
+          Aggregate triage activity across your repositories.
         </p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <MetricCard label="Issues classified" value={data.metrics.totalIssuesClassified} />
-        <MetricCard label="Patterns detected" value={data.metrics.patternsDetected} />
-        <MetricCard label="Duplicates caught" value={data.metrics.duplicatesCaught} />
-        <MetricCard label="Drafts approved" value={data.metrics.draftsApproved} />
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-10">
+        <MetricCard label="Issues Classified" value={data.metrics.totalIssuesClassified} />
+        <MetricCard label="Patterns Detected" value={data.metrics.patternsDetected} />
+        <MetricCard label="Duplicates Caught" value={data.metrics.duplicatesCaught} />
+        <MetricCard label="Drafts Approved" value={data.metrics.draftsApproved} />
       </div>
 
-      <div className="mt-8 rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900">
-        <div className="border-b border-neutral-200 dark:border-neutral-800 px-6 py-4">
-          <h2 className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
-            Recent activity
+      <div className="bg-zinc-950 border border-zinc-800 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+        <div className="border-b border-zinc-800 px-6 py-4 flex items-center gap-3">
+          <span className="inline-block w-6 h-px bg-emerald-500"></span>
+          <h2 className="text-xs tracking-[0.2em] uppercase text-zinc-400">
+            Recent Activity
           </h2>
         </div>
         {data.recentActivity.length === 0 ? (
-          <div className="p-6 text-sm text-neutral-500 dark:text-neutral-400">
-            No recent activity yet. Install Triage on a GitHub repo to get started.
+          <div className="p-6 text-sm text-zinc-500">
+            No recent activity. Install Triage on a GitHub repo to begin.
           </div>
         ) : (
-          <ul className="divide-y divide-neutral-200 dark:divide-neutral-800">
+          <ul className="divide-y divide-zinc-800">
             {data.recentActivity.map((event, idx) => (
               <li key={idx}>
                 <ActivityRow event={event} />
@@ -57,11 +61,11 @@ export default async function OverviewPage() {
 
 function MetricCard({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-4">
-      <p className="text-xs text-neutral-500 dark:text-neutral-400 uppercase tracking-wide">
+    <div className="bg-zinc-950 border border-zinc-800 hover:border-emerald-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] p-4 transition-colors">
+      <p className="text-[10px] tracking-[0.2em] uppercase text-zinc-500">
         {label}
       </p>
-      <p className="mt-2 text-2xl font-semibold text-neutral-900 dark:text-neutral-100">
+      <p className="mt-3 text-3xl font-medium text-zinc-100">
         {value.toLocaleString()}
       </p>
     </div>
@@ -75,14 +79,14 @@ function ActivityRow({ event }: { event: RecentActivityEvent }) {
     return (
       <div className="px-6 py-4 flex items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
-          <p className="text-xs uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
-            Pattern detected · {event.severity} · {event.category}
+          <p className="text-[10px] tracking-[0.15em] uppercase text-zinc-500">
+            Pattern Detected · {event.severity} · {event.category}
           </p>
-          <p className="mt-1 text-sm text-neutral-900 dark:text-neutral-100 truncate">
+          <p className="mt-1.5 text-sm text-zinc-200 truncate">
             {event.patternTitle}
           </p>
         </div>
-        <span className="text-xs text-neutral-500 dark:text-neutral-400 shrink-0">
+        <span className="text-[10px] tracking-[0.15em] uppercase text-zinc-600 shrink-0">
           {relativeTime}
         </span>
       </div>
@@ -93,32 +97,31 @@ function ActivityRow({ event }: { event: RecentActivityEvent }) {
     return (
       <div className="px-6 py-4 flex items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
-          <p className="text-xs uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
-            Draft approved · {event.repoFullName}#{event.issueNumber}
+          <p className="text-[10px] tracking-[0.15em] uppercase text-zinc-500">
+            Draft Approved · {event.repoFullName}#{event.issueNumber}
           </p>
-          <p className="mt-1 text-sm text-neutral-900 dark:text-neutral-100 truncate">
+          <p className="mt-1.5 text-sm text-zinc-200 truncate">
             {event.issueTitle}
           </p>
         </div>
-        <span className="text-xs text-neutral-500 dark:text-neutral-400 shrink-0">
+        <span className="text-[10px] tracking-[0.15em] uppercase text-zinc-600 shrink-0">
           {relativeTime}
         </span>
       </div>
     );
   }
 
-  // issue_classified
   return (
     <div className="px-6 py-4 flex items-start justify-between gap-4">
       <div className="min-w-0 flex-1">
-        <p className="text-xs uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
-          Issue classified · {event.issueType} · {event.repoFullName}#{event.issueNumber}
+        <p className="text-[10px] tracking-[0.15em] uppercase text-zinc-500">
+          Issue Classified · {event.issueType} · {event.repoFullName}#{event.issueNumber}
         </p>
-        <p className="mt-1 text-sm text-neutral-900 dark:text-neutral-100 truncate">
+        <p className="mt-1.5 text-sm text-zinc-200 truncate">
           {event.issueTitle}
         </p>
       </div>
-      <span className="text-xs text-neutral-500 dark:text-neutral-400 shrink-0">
+      <span className="text-[10px] tracking-[0.15em] uppercase text-zinc-600 shrink-0">
         {relativeTime}
       </span>
     </div>

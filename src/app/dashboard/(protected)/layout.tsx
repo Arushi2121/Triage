@@ -14,32 +14,46 @@ export default async function DashboardLayout({
   }
 
   return (
-    <div className="min-h-screen bg-neutral-50 dark:bg-neutral-950">
+    <div className="min-h-screen bg-[#0a0a0a] font-mono">
       <div className="flex">
         {/* Sidebar */}
-        <aside className="w-60 min-h-screen border-r border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 flex flex-col">
-          <div className="p-6 border-b border-neutral-200 dark:border-neutral-800">
-            <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
-              Triage
+        <aside className="w-64 min-h-screen border-r border-zinc-800 bg-zinc-950 flex flex-col">
+          {/* Wordmark section */}
+          <div className="px-6 pt-8 pb-6 border-b border-zinc-800">
+            <h2 className="text-lg font-medium tracking-[0.3em] text-zinc-100">
+              TRIAGE
             </h2>
-            <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">
+            <p className="mt-2 text-[10px] tracking-[0.2em] uppercase text-zinc-500">
               {user.github_username}
             </p>
           </div>
 
-          <nav className="flex-1 p-4 space-y-1">
+          {/* Navigation */}
+          <nav className="flex-1 px-3 py-6 space-y-0.5">
             <SidebarLink href="/dashboard" label="Overview" />
             <SidebarLink href="/dashboard/patterns" label="Patterns" />
-            <SidebarLink href="/dashboard/issues" label="Issues" />
+            <SidebarLink href="/dashboard/issues" label="Backlog" />
           </nav>
 
-          <div className="p-4 border-t border-neutral-200 dark:border-neutral-800">
+          {/* Status footer */}
+          <div className="border-t border-zinc-800 px-6 py-4">
+            <div className="flex items-center gap-2 mb-4">
+              <span className="relative flex h-1.5 w-1.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
+              </span>
+              <span className="text-[10px] tracking-[0.2em] uppercase text-zinc-500">
+                System Operational
+              </span>
+            </div>
             <LogoutButton />
           </div>
         </aside>
 
         {/* Main content */}
-        <main className="flex-1 p-8">{children}</main>
+        <main className="flex-1 p-10">
+          {children}
+        </main>
       </div>
     </div>
   );
@@ -49,7 +63,7 @@ function SidebarLink({ href, label }: { href: string; label: string }) {
   return (
     <Link
       href={href}
-      className="block px-3 py-2 text-sm text-neutral-700 dark:text-neutral-300 rounded-md hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+      className="block px-3 py-2 text-xs tracking-[0.15em] uppercase text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900 transition-colors"
     >
       {label}
     </Link>
