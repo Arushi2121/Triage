@@ -66,7 +66,12 @@ export function buildTriageMessage(params: {
 
   const emoji = EMOJI_MAP[recommendation.type] || "📥";
   const title = RECOMMENDATION_TITLES[recommendation.type] || "New Issue";
-  const severityLabel = toTitleCase(classification.severity);
+  const typeLabel = toTitleCase(classification.issue_type ?? "issue");
+  const severityLabel =
+    classification.severity && classification.severity !== "none"
+      ? ` — ${toTitleCase(classification.severity)} severity`
+      : "";
+  const headerText = `New ${typeLabel}${severityLabel}`;
   const confidencePercent = Math.round(classification.confidence * 100);
 
   // Plain text fallback for notifications
@@ -85,7 +90,7 @@ export function buildTriageMessage(params: {
     type: "header",
     text: {
       type: "plain_text",
-      text: `${emoji} ${title} — ${severityLabel}`,
+      text: `${emoji} ${headerText}`,
     },
   });
 
