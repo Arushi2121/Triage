@@ -109,3 +109,28 @@ export type IssueClassificationFilter =
 export type IssueStateFilter = "all" | "open" | "closed";
 
 export type IssueItemTypeFilter = "all" | "issue" | "pr";
+
+export interface DigestListItem {
+  id: string;
+  title: string;
+  period_start: string;
+  period_end: string;
+  period_type: string;
+  generated_at: string;
+  summary: string;
+  total_issues: number;
+  total_prs: number;
+  patterns_count: number;
+}
+
+export interface DigestSection {
+  heading: string;
+  body?: string;
+  items?: Array<{ label: string; value?: string | number }>;
+}
+
+export interface DigestDetail extends DigestListItem {
+  sections: DigestSection[];
+  metrics: Record<string, number | string>;
+  status: string;
+}

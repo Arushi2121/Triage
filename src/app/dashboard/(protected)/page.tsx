@@ -1,6 +1,8 @@
 import { getCurrentUser } from "@/lib/dashboard/auth";
 import { redirect } from "next/navigation";
 import { loadOverviewData } from "@/lib/dashboard/overview_data";
+import { getLatestDigestForUser } from "@/lib/dashboard/digests_data";
+import { LatestDigestCard } from "./latest_digest_card";
 import type { RecentActivityEvent } from "@/types/dashboard";
 
 export const dynamic = "force-dynamic";
@@ -12,6 +14,7 @@ export default async function OverviewPage() {
   }
 
   const data = await loadOverviewData(user);
+  const latestDigest = await getLatestDigestForUser(user);
 
   return (
     <div className="max-w-6xl">
@@ -33,6 +36,8 @@ export default async function OverviewPage() {
         <MetricCard label="Duplicates Caught" value={data.metrics.duplicatesCaught} />
         <MetricCard label="Drafts Approved" value={data.metrics.draftsApproved} />
       </div>
+
+      <LatestDigestCard latest={latestDigest} />
 
       <div className="bg-zinc-950 border border-zinc-800 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
         <div className="border-b border-zinc-800 px-6 py-4 flex items-center gap-3">
