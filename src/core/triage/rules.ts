@@ -30,7 +30,7 @@ export function applyRules(context: TriageContext): TriageRecommendation {
     };
   }
 
-  // Rule 3: Critical severity
+  // Rule 3: Critical severity — genuine emergency, no auto-draft, escalate to human
   if (classification.severity === "critical") {
     return {
       type: "urgent-attention",
@@ -41,7 +41,36 @@ export function applyRules(context: TriageContext): TriageRecommendation {
     };
   }
 
-  // Rule 4: High severity
+  // Rule 4: Bugs and features — draftable at any non-critical severity.
+  // Returns notify-only (NOT urgent-attention) so events.ts draft generation runs
+  // (its trigger is `recommendation.type !== "urgent-attention"`).
+  // Rationale: bug reports benefit from drafts asking for reproduction info; feature
+  // requests benefit from drafts acknowledging + asking about use case.
+  if (
+    classification.issue_type === "bug" ||
+    classification.issue_type === "feature"
+  ) {
+    const priority: TriageRecommendation["priority"] =
+      classification.severity === "high"
+        ? "high"
+        : classification.severity === "medium"
+          ? "medium"
+          : "low";
+    return {
+      type: "notify-only",
+      priority,
+      reasoning: `${classification.issue_type} report at ${classification.severity} severity — drafting response for maintainer review.`,
+      suggested_action:
+        classification.issue_type === "bug"
+          ? "Draft asks for reproduction steps, environment, and expected vs actual behavior."
+          : "Draft acknowledges the request and asks about use case, priority, and any workarounds already tried.",
+      metadata: {
+        draft_intent: classification.issue_type === "bug" ? "bug-triage" : "feature-triage",
+      },
+    };
+  }
+
+  // Rule 5: High severity for non-bug/feature types (docs, discussion, etc.)
   if (classification.severity === "high") {
     return {
       type: "urgent-attention",
@@ -52,7 +81,7 @@ export function applyRules(context: TriageContext): TriageRecommendation {
     };
   }
 
-  // Rule 5: Documentation issue
+  // Rule 6: Documentation issue
   if (classification.issue_type === "documentation") {
     return {
       type: "route-to-docs",
@@ -63,7 +92,7 @@ export function applyRules(context: TriageContext): TriageRecommendation {
     };
   }
 
-  // Rule 6: Question
+  // Rule 7: Question
   if (classification.issue_type === "question") {
     return {
       type: "request-info",
@@ -74,7 +103,7 @@ export function applyRules(context: TriageContext): TriageRecommendation {
     };
   }
 
-  // Rule 7: Default (bug, feature, discussion with medium/low severity)
+  // Rule 8: Default fallback (discussion, other with medium/low severity)
   return {
     type: "notify-only",
     priority: classification.severity === "medium" ? "medium" : "low",
