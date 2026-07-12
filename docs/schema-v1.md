@@ -212,7 +212,7 @@ CREATE INDEX notification_targets_platform_idx ON notification_targets(platform)
 ```json
 {
   "workspace_id": "T0B5PTQNCQ6",
-  "channel_id": "C0B5AG6F747"
+  "channel_id": "C0BGUGRJEU9"
 }
 ```
 

@@ -13,7 +13,7 @@ import { draftResponse, draftPRResponse } from "@/integrations/llm/draft";
 import { insertDraft } from "@/db/drafts";
 import { upsertDetectedDuplicate } from "@/db/issue_duplicates";
 
-const TEMP_DEFAULT_CHANNEL = "C0B5AG6F747";
+const TEMP_DEFAULT_CHANNEL = "C0BGUGRJEU9";
 
 interface GitHubWebhookPayload {
   action?: string;
